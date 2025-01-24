@@ -28,9 +28,8 @@ from langchain_core.vectorstores.utils import maximal_marginal_relevance
 if TYPE_CHECKING:
     from hdbcli import dbapi  # type: ignore
 
-from langchain_sap_hana_cloud.utils import DistanceStrategy
 from langchain_sap_hana_cloud.embeddings import HanaInternalEmbeddings
-
+from langchain_sap_hana_cloud.utils import DistanceStrategy
 
 HANA_DISTANCE_FUNCTION: dict = {
     DistanceStrategy.COSINE: ("COSINE_SIMILARITY", "DESC"),
@@ -798,7 +797,7 @@ class HanaDB(VectorStore):
         k: int = 4,
         filter: Optional[dict] = None,
         query: Optional[str] = None,
-        ) -> List[Document]:
+    ) -> List[Document]:
         """Return docs most similar to embedding vector or query.
 
         Args:
@@ -1024,7 +1023,7 @@ class HanaDB(VectorStore):
                     embedding = json.loads(res[0][0])
             finally:
                 cur.close()
-        
+
         return self.max_marginal_relevance_search_by_vector(
             embedding=embedding,
             k=k,
