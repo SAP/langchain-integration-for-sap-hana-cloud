@@ -1,5 +1,3 @@
-from typing import List
-
 from langchain_core.embeddings import Embeddings
 
 
@@ -19,7 +17,7 @@ class HanaInternalEmbeddings(Embeddings):
         """
         self.model_id = internal_embedding_model_id
 
-    def embed_query(self, text: str) -> List[float]:
+    def embed_query(self, text: str) -> list[float]:
         """
         Override the embed_query method to raise an error.
         This method is not applicable for HANA internal embeddings.
@@ -31,7 +29,7 @@ class HanaInternalEmbeddings(Embeddings):
             "Use HANA's internal embedding functionality instead."
         )
 
-    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
         """
         Override the embed_documents method to raise an error.
         This method is not applicable for HANA internal embeddings.
