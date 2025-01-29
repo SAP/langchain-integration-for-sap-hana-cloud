@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import re
+from abc import ABC, abstractmethod
 from typing import (
-    TYPE_CHECKING,
     Any,
     Callable,
     Iterable,
@@ -16,14 +15,12 @@ from typing import (
 )
 
 import numpy as np
+from hdbcli import dbapi  # type: ignore
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_core.runnables.config import run_in_executor
 from langchain_core.vectorstores import VectorStore
 from langchain_core.vectorstores.utils import maximal_marginal_relevance
-
-if TYPE_CHECKING:
-    from hdbcli import dbapi  # type: ignore
 
 from langchain_sap_hana_cloud.embeddings import HanaInternalEmbeddings
 from langchain_sap_hana_cloud.utils import DistanceStrategy
@@ -65,11 +62,73 @@ default_vector_column: str = "VEC_VECTOR"
 default_vector_column_length: int = -1  # -1 means dynamic length
 
 
-class HanaDB(VectorStore):
-    """SAP HANA Cloud Vector Engine
+class HanaDB(VectorStore, ABC):
+    """SAP HANA Cloud Vector Engine base class and factory.
 
-    The prerequisite for using this class is the installation of the ``hdbcli``
-    Python package.
+    This class serves two roles:
+    1. Factory: Creates and returns the appropriate implementation based on the
+        embedding type:
+       - Returns _HanaDBWithInternalEmbeddings for HanaInternalEmbeddings
+       - Returns _HanaDBWithExternalEmbeddings for all other embedding types
+    2. Base Class: Provides common functionality and interface for both implementations:
+       - Table and index management
+        - Query building and execution
+        - Metadata handling
+        - Connection management
+
+    The factory pattern is implemented through __new__, which examines the
+    embedding type and returns the appropriate concrete implementation.
+
+    Key Features:
+        - Automatic selection of appropriate implementation
+        - Common interface for both internal and external embeddings
+        - Shared functionality through inheritance
+        - Type-safe implementation selection
+
+    Example:
+        >>> from langchain_sap_hana_cloud import HanaDB, HanaInternalEmbeddings
+        >>> from langchain_openai import OpenAIEmbeddings
+        >>>
+        >>> # Using internal embeddings (returns _HanaDBWithInternalEmbeddings)
+        >>> internal_embedding = HanaInternalEmbeddings(model_id="<model_id>")
+        >>> db1 = HanaDB(
+        ...     connection=your_connection,
+        ...     embedding=internal_embedding
+        ... )
+        >>>
+        >>> # Using external embeddings (returns _HanaDBWithExternalEmbeddings)
+        >>> external_embedding = OpenAIEmbeddings()
+        >>> db2 = HanaDB(
+        ...     connection=your_connection,
+        ...     embedding=external_embedding
+        ... )
+    """
+
+    def __new__(
+        cls,
+        connection: dbapi.Connection,
+        embedding: Embeddings,
+        distance_strategy: DistanceStrategy = default_distance_strategy,
+        table_name: str = default_table_name,
+        content_column: str = default_content_column,
+        metadata_column: str = default_metadata_column,
+        vector_column: str = default_vector_column,
+        vector_column_length: int = default_vector_column_length,
+        *,
+        specific_metadata_columns: Optional[list[str]] = None,
+    ):
+        if cls is HanaDB:
+            # Create an instance based on the embedding type
+            if isinstance(embedding, HanaInternalEmbeddings):
+                subclass = _HanaDBWithInternalEmbeddings
+            else:
+                subclass = _HanaDBWithExternalEmbeddings
+            return super().__new__(subclass)
+
+        else:
+            return super().__new__(cls)
+
+    """Base class for SAP HANA Cloud Vector Engine implementations.
 
     The HanaDB vectorstore can be created by providing an embedding function and
     an existing database connection. Optionally, the names of the table and the
@@ -89,13 +148,6 @@ class HanaDB(VectorStore):
         *,
         specific_metadata_columns: Optional[list[str]] = None,
     ):
-        # Check if the hdbcli package is installed
-        if importlib.util.find_spec("hdbcli") is None:
-            raise ImportError(
-                "Could not import hdbcli python package. "
-                "Please install it with `pip install hdbcli`."
-            )
-
         valid_distance = False
         for key in HANA_DISTANCE_FUNCTION.keys():
             if key is distance_strategy:
@@ -117,18 +169,11 @@ class HanaDB(VectorStore):
             specific_metadata_columns or []
         )
 
-        # Decide whether to use internal or external embeddings
-        if isinstance(embedding, HanaInternalEmbeddings):
-            # Internal embeddings
-            self.use_internal_embeddings = True
-            self.internal_embedding_model_id = embedding.get_model_id()
-            self._validate_internal_embedding_function()
-        else:
-            # External embeddings
-            self.use_internal_embeddings = False
-            self.internal_embedding_model_id = ""
+        # Initialize the table if it doesn't exist
+        self._initialize_table()
 
-        # Check if the table exists, and eventually create it
+    def _initialize_table(self) -> None:
+        """Initialize the table if it doesn't exist and validate columns."""
         if not self._table_exists(self.table_name):
             sql_str = (
                 f'CREATE TABLE "{self.table_name}"('
@@ -254,33 +299,6 @@ class HanaDB(VectorStore):
             metadata_columns.append(sanitized_name)
         return metadata_columns
 
-    def _validate_internal_embedding_function(self) -> None:
-        """
-        Ping the database to check if the in-database embedding function
-            exists and works.
-        Raises:
-            RuntimeError: If the embedding function does not exist or fails.
-        """
-        cur = self.connection.cursor()
-        try:
-            # Test the VECTOR_EMBEDDING function by executing a simple query
-            cur.execute(
-                (
-                    "SELECT TO_NVARCHAR("
-                    "VECTOR_EMBEDDING('test', 'QUERY', :model_version))"
-                    "FROM sys.DUMMY;"
-                ),
-                model_version=self.internal_embedding_model_id,
-            )
-            cur.fetchall()  # Ensure the query runs successfully
-
-        except Exception as e:  # Catch all database-related exceptions
-            raise RuntimeError(
-                f"Validation of the internal embedding function failed: {str(e)}. "
-            )
-        finally:
-            cur.close()
-
     def _split_off_special_metadata(self, metadata: dict) -> tuple[dict, list]:
         # Use provided values by default or fallback
         special_metadata = []
@@ -292,6 +310,16 @@ class HanaDB(VectorStore):
             special_metadata.append(metadata.get(column_name, None))
 
         return metadata, special_metadata
+
+    def _get_specific_metadata_columns_string(self) -> str:
+        """
+        Helper function to generate the specific metadata columns as a SQL string.
+        Returns:
+            str: SQL string for specific metadata columns.
+        """
+        if not self.specific_metadata_columns:
+            return ""
+        return ', "' + '", "'.join(self.specific_metadata_columns) + '"'
 
     def create_hnsw_index(
         self,
@@ -376,195 +404,6 @@ class HanaDB(VectorStore):
         finally:
             cur.close()
 
-    def _generate_add_text_query_using_external_embeddings(
-        self,
-        texts: Iterable[str],
-        metadatas: Optional[list[dict]] = None,
-        embeddings: Optional[list[list[float]]] = None,
-        **kwargs: Any,
-    ) -> tuple[str, list]:
-        """
-        Generate SQL query and parameters for adding texts with external embeddings.
-
-        Args:
-            texts (Iterable[str]): Texts to add.
-            metadatas (Optional[list[dict]]): Metadata for each text.
-            embeddings (Optional[list[list[float]]]): Pre-generated embeddings.
-
-        Returns:
-            tuple[str, list]: SQL query string and parameters.
-        """
-        # Create all embeddings of the texts beforehand to improve performance
-        if embeddings is None:
-            embeddings = self.embedding.embed_documents(list(texts))
-
-        # Create sql parameters array
-        sql_params = []
-        for i, text in enumerate(texts):
-            metadata = metadatas[i] if metadatas else {}
-            metadata, extracted_special_metadata = self._split_off_special_metadata(
-                metadata
-            )
-            sql_params.append(
-                (
-                    text,
-                    json.dumps(HanaDB._sanitize_metadata_keys(metadata)),
-                    str(embeddings[i]),
-                    *extracted_special_metadata,
-                )
-            )
-
-        specific_metadata_columns_string = self._get_specific_metadata_columns_string()
-        sql_str = (
-            f'INSERT INTO "{self.table_name}" ("{self.content_column}", '
-            f'"{self.metadata_column}", '
-            f'"{self.vector_column}"{specific_metadata_columns_string}) '
-            f"VALUES (?, ?, TO_REAL_VECTOR (?)"
-            f"{', ?' * len(self.specific_metadata_columns)});"
-        )
-        return sql_str, sql_params
-
-    def _generate_add_text_query_using_internal_embeddings(
-        self,
-        texts: Iterable[str],
-        metadatas: Optional[list[dict]] = None,
-        **kwargs: Any,
-    ) -> tuple[str, list]:
-        """
-        Generate SQL query and parameters for adding texts with internal embeddings.
-        Args:
-            texts (Iterable[str]): Texts to add.
-            metadatas (Optional[list[dict]]): Metadata for each text.
-        Returns:
-            tuple[str, list]: SQL query string and parameters.
-        """
-        sql_params = []
-        for i, text in enumerate(texts):
-            metadata = metadatas[i] if metadatas else {}
-            metadata, extracted_special_metadata = self._split_off_special_metadata(
-                metadata
-            )
-            parameters = {
-                "content": text,  # Replace `content_value` with the actual value
-                "metadata": json.dumps(
-                    HanaDB._sanitize_metadata_keys(metadata)
-                ),  # Replace `metadata_value` with the actual value
-                "model_version": self.internal_embedding_model_id,
-            }
-            parameters.update(
-                {
-                    col: value
-                    for col, value in zip(
-                        self.specific_metadata_columns, extracted_special_metadata
-                    )
-                }
-            )  # specific_metadata_values must align with the columns
-            sql_params.append(parameters)
-
-        specific_metadata_str = ", ".join(
-            f":{col}" for col in self.specific_metadata_columns
-        )
-        specific_metadata_columns_string = self._get_specific_metadata_columns_string()
-
-        sql_str = (
-            f'INSERT INTO "{self.table_name}" ("{self.content_column}", '
-            f'"{self.metadata_column}", '
-            f'"{self.vector_column}"{specific_metadata_columns_string}) '
-            f"VALUES (:content, :metadata, VECTOR_EMBEDDING"
-            f"(:content, 'DOCUMENT', :model_version) "
-            f"{(', ' + specific_metadata_str) if specific_metadata_str else ''});"
-        )
-        return sql_str, sql_params
-
-    def _get_specific_metadata_columns_string(self) -> str:
-        """
-        Helper function to generate the specific metadata columns as a SQL string.
-        Returns:
-            str: SQL string for specific metadata columns.
-        """
-        if not self.specific_metadata_columns:
-            return ""
-        return ', "' + '", "'.join(self.specific_metadata_columns) + '"'
-
-    def add_texts(  # type: ignore[override]
-        self,
-        texts: Iterable[str],
-        metadatas: Optional[list[dict]] = None,
-        embeddings: Optional[list[list[float]]] = None,
-        **kwargs: Any,
-    ) -> list[str]:
-        """Add more texts to the vectorstore,
-                using either internal or external embeddings.
-        Args:
-            texts (Iterable[str]): Iterable of strings/text to add to the vectorstore.
-            metadatas (Optional[list[dict]], optional): Optional list of metadatas.
-                Defaults to None.
-            embeddings (Optional[list[list[float]]], optional): Optional pre-generated
-                embeddings. Defaults to None.
-        Returns:
-            list[str]: empty list
-        """
-        if self.use_internal_embeddings and embeddings is None:
-            sql_str, sql_params = (
-                self._generate_add_text_query_using_internal_embeddings(
-                    texts=texts, metadatas=metadatas, kwargs=kwargs
-                )
-            )
-        else:
-            sql_str, sql_params = (
-                self._generate_add_text_query_using_external_embeddings(
-                    texts=texts,
-                    metadatas=metadatas,
-                    embeddings=embeddings,
-                    kwargs=kwargs,
-                )
-            )
-        # Insert data into the table
-        cur = self.connection.cursor()
-        try:
-            cur.executemany(sql_str, sql_params)
-        finally:
-            cur.close()
-        return []
-
-    @classmethod
-    def from_texts(  # type: ignore[no-untyped-def, override]
-        cls: Type[HanaDB],
-        texts: list[str],
-        embedding: Embeddings,
-        metadatas: Optional[list[dict]] = None,
-        connection: dbapi.Connection = None,
-        distance_strategy: DistanceStrategy = default_distance_strategy,
-        table_name: str = default_table_name,
-        content_column: str = default_content_column,
-        metadata_column: str = default_metadata_column,
-        vector_column: str = default_vector_column,
-        vector_column_length: int = default_vector_column_length,
-        *,
-        specific_metadata_columns: Optional[list[str]] = None,
-    ):
-        """Create a HanaDB instance from raw documents.
-        This is a user-friendly interface that:
-            1. Embeds documents.
-            2. Creates a table if it does not yet exist.
-            3. Adds the documents to the table.
-        This is intended to be a quick way to get started.
-        """
-
-        instance = cls(
-            connection=connection,
-            embedding=embedding,
-            distance_strategy=distance_strategy,
-            table_name=table_name,
-            content_column=content_column,
-            metadata_column=metadata_column,
-            vector_column=vector_column,
-            vector_column_length=vector_column_length,  # -1 means dynamic length
-            specific_metadata_columns=specific_metadata_columns,
-        )
-        instance.add_texts(texts, metadatas)
-        return instance
-
     def similarity_search(  # type: ignore[override]
         self, query: str, k: int = 4, filter: Optional[dict] = None
     ) -> list[Document]:
@@ -577,39 +416,12 @@ class HanaDB(VectorStore):
                     Defaults to None.
 
         Returns:
-            Lilistst of Documents most similar to the query
+            List of Documents most similar to the query
         """
         docs_and_scores = self.similarity_search_with_score(
             query=query, k=k, filter=filter
         )
         return [doc for doc, _ in docs_and_scores]
-
-    def similarity_search_with_score(
-        self, query: str, k: int = 4, filter: Optional[dict] = None
-    ) -> list[tuple[Document, float]]:
-        """Return documents and score values most similar to query.
-
-        Args:
-            query: Text to look up documents similar to.
-            k: Number of Documents to return. Defaults to 4.
-            filter: A dictionary of metadata fields and values to filter by.
-                    Defaults to None.
-
-        Returns:
-            list of tuples (containing a Document and a score) that are
-            most similar to the query
-        """
-        if self.use_internal_embeddings:
-            # Internal embeddings: pass the query directly
-            return self.similarity_search_with_score_by_vector(
-                k=k, filter=filter, query=query
-            )
-        else:
-            # External embeddings: generate embedding from the query
-            embedding = self.embedding.embed_query(query)
-            return self.similarity_search_with_score_by_vector(
-                embedding=embedding, k=k, filter=filter
-            )
 
     def _extract_keyword_search_columns(
         self, filter: Optional[dict] = None
@@ -680,138 +492,6 @@ class HanaDB(VectorStore):
             f"SELECT *, {', '.join(metadata_columns)} "
             f"FROM \"{self.table_name}\")"
         )
-
-    def similarity_search_with_score_and_vector_by_vector(
-        self,
-        embedding: Optional[list[float]] = None,
-        k: int = 4,
-        filter: Optional[dict] = None,
-        query: Optional[str] = None,
-    ) -> list[tuple[Document, float, list[float]]]:
-        """Return docs most similar to the given embedding.
-
-        Args:
-            embedding: Precomputed embedding vector for similarity search.
-                    Required if `use_internal_embeddings` is False.
-            query: Text to look up documents similar to.
-            k: Number of Documents to return. Defaults to 4.
-            filter: A dictionary of metadata fields and values to filter by.
-                    Defaults to None.
-
-        Returns:
-            List of Documents most similar to the query and
-            score and the document's embedding vector for each
-        """
-        result = []
-        k = HanaDB._sanitize_int(k)
-        distance_func_name = HANA_DISTANCE_FUNCTION[self.distance_strategy][0]
-
-        # Validate input depending on the embedding type being used
-        if self.use_internal_embeddings:
-            if not query:
-                raise ValueError("Query text must be provided for internal embeddings.")
-        else:
-            if not embedding:
-                raise ValueError(
-                    "Embedding vector must be provided for external embeddings."
-                )
-
-        # Generate metadata projection for filtered results
-        projected_metadata_columns = self._extract_keyword_search_columns(filter)
-        metadata_projection = ""
-        if projected_metadata_columns:
-            metadata_projection = self._create_metadata_projection(
-                projected_metadata_columns
-            )
-
-        from_clause = (
-            INTERMEDIATE_TABLE_NAME if metadata_projection else f'"{self.table_name}"'
-        )
-
-        order_str = f" order by CS {HANA_DISTANCE_FUNCTION[self.distance_strategy][1]}"
-        where_str, query_tuple = self._create_where_by_filter(filter)
-
-        if not self.use_internal_embeddings:
-            embedding_sql_expression = f"TO_REAL_VECTOR ('{str(embedding)}')"
-        else:
-            embedding_sql_expression = "VECTOR_EMBEDDING(?, 'QUERY', ?)"
-            query_tuple = [query, self.internal_embedding_model_id] + list(query_tuple)
-
-        sql_str = (
-            f"{metadata_projection} "
-            f"SELECT TOP {k}"
-            f'  "{self.content_column}", '  # row[0]
-            f'  "{self.metadata_column}", '  # row[1]
-            f'  TO_NVARCHAR("{self.vector_column}"), '  # row[2]
-            f'  {distance_func_name}("{self.vector_column}", '
-            f"  {embedding_sql_expression}) AS CS "  # row[3]
-            f"FROM {from_clause}"
-        )
-        sql_str = sql_str + where_str
-        sql_str = sql_str + order_str
-        try:
-            cur = self.connection.cursor()
-            cur.execute(sql_str, query_tuple)
-            if cur.has_result_set():
-                rows = cur.fetchall()
-                for row in rows:
-                    js = json.loads(row[1])
-                    doc = Document(page_content=row[0], metadata=js)
-                    result_vector = HanaDB._parse_float_array_from_string(row[2])
-                    result.append((doc, row[3], result_vector))
-        finally:
-            cur.close()
-        return result
-
-    def similarity_search_with_score_by_vector(
-        self,
-        embedding: Optional[list[float]] = None,
-        k: int = 4,
-        filter: Optional[dict] = None,
-        query: Optional[str] = None,
-    ) -> list[tuple[Document, float]]:
-        """Return docs most similar to the given embedding or query.
-
-        Args:
-            embedding: Precomputed embedding for similarity search.
-                    Required if `use_internal_embeddings` is False.
-            k: Number of Documents to return. Defaults to 4.
-            filter: A dictionary of metadata fields and values to filter by.
-                    Defaults to None.
-            query: Text to look up documents similar to.
-
-        Returns:
-            list of Documents most similar to the query and score for each
-        """
-        whole_result = self.similarity_search_with_score_and_vector_by_vector(
-            embedding=embedding, k=k, filter=filter, query=query
-        )
-        return [(result_item[0], result_item[1]) for result_item in whole_result]
-
-    def similarity_search_by_vector(  # type: ignore[override]
-        self,
-        embedding: Optional[list[float]] = None,
-        k: int = 4,
-        filter: Optional[dict] = None,
-        query: Optional[str] = None,
-    ) -> list[Document]:
-        """Return docs most similar to embedding vector or query.
-
-        Args:
-            embedding: Embedding to look up documents similar to.
-            k: Number of Documents to return. Defaults to 4.
-            filter: A dictionary of metadata fields and values to filter by.
-                    Defaults to None.
-            query: Text to look up documents similar to.
-
-
-        Returns:
-            list of Documents most similar to the query vector.
-        """
-        docs_and_scores = self.similarity_search_with_score_by_vector(
-            embedding=embedding, k=k, filter=filter, query=query
-        )
-        return [doc for doc, _ in docs_and_scores]
 
     def _create_where_by_filter(self, filter):  # type: ignore[no-untyped-def]
         query_tuple = []
@@ -972,6 +652,226 @@ class HanaDB(VectorStore):
         """
         return await run_in_executor(None, self.delete, ids=ids, filter=filter)
 
+    async def amax_marginal_relevance_search_by_vector(  # type: ignore[override]
+        self,
+        embedding: list[float],
+        k: int = 4,
+        fetch_k: int = 20,
+        lambda_mult: float = 0.5,
+        **kwargs: Any,
+    ) -> list[Document]:
+        """Return docs selected using the maximal marginal relevance."""
+        return await run_in_executor(
+            None,
+            self.max_marginal_relevance_search_by_vector,
+            embedding=embedding,
+            k=k,
+            fetch_k=fetch_k,
+            lambda_mult=lambda_mult,
+        )
+
+    @staticmethod
+    def _parse_float_array_from_string(array_as_string: str) -> list[float]:  # type: ignore[misc]
+        array_wo_brackets = array_as_string[1:-1]
+        return [float(x) for x in array_wo_brackets.split(",")]
+
+    @staticmethod
+    def _cosine_relevance_score_fn(distance: float) -> float:
+        return distance
+
+    def _select_relevance_score_fn(self) -> Callable[[float], float]:
+        """
+        The 'correct' relevance function
+        may differ depending on a few things, including:
+        - the distance / similarity metric used by the VectorStore
+        - the scale of your embeddings (OpenAI's are unit normed. Many others are not!)
+        - embedding dimensionality
+        - etc.
+
+        Vectorstores should define their own selection based method of relevance.
+        """
+        if self.distance_strategy == DistanceStrategy.COSINE:
+            return HanaDB._cosine_relevance_score_fn
+        elif self.distance_strategy == DistanceStrategy.EUCLIDEAN_DISTANCE:
+            return HanaDB._euclidean_relevance_score_fn
+        else:
+            raise ValueError(
+                "Unsupported distance_strategy: {}".format(self.distance_strategy)
+            )
+
+    def _similarity_search_with_score_and_vector(
+        self,
+        embedding_expr: str,
+        k: int = 4,
+        filter: Optional[dict] = None,
+        vector_embedding_params: list[str, str] = None,
+    ) -> list[tuple[Document, float, list[float]]]:
+        """Perform similarity search and return documents with scores and vectors.
+
+        Args:
+            embedding_expr: SQL expression that generates or represents the embedding
+                vector. For internal embeddings, this would be
+                "VECTOR_EMBEDDING(?, 'QUERY', ?)",
+                where ? will be replaced by parameters from query_params.
+                For external embeddings, this would be "TO_REAL_VECTOR('...')".
+            k: Number of documents to return. Defaults to 4.
+            filter: Optional dictionary of metadata fields and values to filter by.
+            query_params: Optional parameters for the embedding_expr SQL expression.
+                For VECTOR_EMBEDDING function: [text, model_id] for the placeholders.
+                For TO_REAL_VECTOR: None as the vector is included in the expression.
+
+        Returns:
+            List of tuples, each containing:
+            - Document: The matched document with its content and metadata
+            - float: The similarity score
+            - list[float]: The document's embedding vector
+        """
+        result = []
+        k = HanaDB._sanitize_int(k)
+        distance_func_name = HANA_DISTANCE_FUNCTION[self.distance_strategy][0]
+
+        # Generate metadata projection for filtered results
+        projected_metadata_columns = self._extract_keyword_search_columns(filter)
+        metadata_projection = ""
+        if projected_metadata_columns:
+            metadata_projection = self._create_metadata_projection(
+                projected_metadata_columns
+            )
+
+        from_clause = (
+            INTERMEDIATE_TABLE_NAME if metadata_projection else f'"{self.table_name}"'
+        )
+
+        order_str = f" order by CS {HANA_DISTANCE_FUNCTION[self.distance_strategy][1]}"
+        where_str, query_tuple = self._create_where_by_filter(filter)
+
+        if vector_embedding_params:
+            query_tuple = vector_embedding_params + list(query_tuple)
+
+        sql_str = (
+            f"{metadata_projection} "
+            f"SELECT TOP {k}"
+            f'  "{self.content_column}", '  # row[0]
+            f'  "{self.metadata_column}", '  # row[1]
+            f'  TO_NVARCHAR("{self.vector_column}"), '  # row[2]
+            f'  {distance_func_name}("{self.vector_column}", '
+            f"  {embedding_expr}) AS CS "  # row[3]
+            f"FROM {from_clause}"
+        )
+        sql_str = sql_str + where_str
+        sql_str = sql_str + order_str
+        try:
+            cur = self.connection.cursor()
+            cur.execute(sql_str, query_tuple)
+            if cur.has_result_set():
+                rows = cur.fetchall()
+                for row in rows:
+                    js = json.loads(row[1])
+                    doc = Document(page_content=row[0], metadata=js)
+                    result_vector = HanaDB._parse_float_array_from_string(row[2])
+                    result.append((doc, row[3], result_vector))
+        finally:
+            cur.close()
+        return result
+
+    @classmethod
+    def from_texts(  # type: ignore[no-untyped-def, override]
+        cls: Type[HanaDB],
+        texts: list[str],
+        embedding: Embeddings,
+        metadatas: Optional[list[dict]] = None,
+        connection: dbapi.Connection = None,
+        distance_strategy: DistanceStrategy = default_distance_strategy,
+        table_name: str = default_table_name,
+        content_column: str = default_content_column,
+        metadata_column: str = default_metadata_column,
+        vector_column: str = default_vector_column,
+        vector_column_length: int = default_vector_column_length,
+        *,
+        specific_metadata_columns: Optional[list[str]] = None,
+    ):
+        """Create a HanaDB instance from raw documents.
+        This is a user-friendly interface that:
+            1. Embeds documents.
+            2. Creates a table if it does not yet exist.
+            3. Adds the documents to the table.
+        This is intended to be a quick way to get started.
+        """
+
+        instance = cls(
+            connection=connection,
+            embedding=embedding,
+            distance_strategy=distance_strategy,
+            table_name=table_name,
+            content_column=content_column,
+            metadata_column=metadata_column,
+            vector_column=vector_column,
+            vector_column_length=vector_column_length,  # -1 means dynamic length
+            specific_metadata_columns=specific_metadata_columns,
+        )
+        instance.add_texts(texts, metadatas)
+        return instance
+
+    @abstractmethod
+    def add_texts(  # type: ignore[override]
+        self,
+        texts: Iterable[str],
+        metadatas: Optional[list[dict]] = None,
+        embeddings: Optional[list[list[float]]] = None,
+        **kwargs: Any,
+    ) -> list[str]:
+        """Add texts to the vectorstore.
+
+        Each implementation should handle the specific way texts are added
+        based on whether internal or external embeddings are used.
+
+        Args:
+            texts: Iterable of strings to add to the vectorstore.
+            metadatas: Optional list of metadatas associated with the texts.
+            embeddings: Optional list of pre-computed embeddings (not used
+                with internal embeddings).
+
+        Returns:
+            list[str]: empty list
+        """
+
+    @abstractmethod
+    def similarity_search_with_score(  # type: ignore[override]
+        self,
+        query: str,
+        k: int = 4,
+        filter: Optional[dict] = None,
+    ) -> list[tuple[Document, float]]:
+        """Return documents and score values most similar to query.
+
+        Args:
+            query: Text to look up documents similar to.
+            k: Number of Documents to return. Defaults to 4.
+            filter: A dictionary of metadata fields and values to filter by.
+                    Defaults to None.
+
+        Returns:
+            List of tuples (containing a Document and a score) that are
+            most similar to the query
+        """
+
+    @abstractmethod
+    def similarity_search_by_vector(  # type: ignore[override]
+        self, embedding: list[float], k: int = 4, filter: Optional[dict] = None
+    ) -> list[Document]:
+        """Return docs most similar to embedding vector.
+
+        Args:
+            embedding: Embedding to look up documents similar to.
+            k: Number of Documents to return. Defaults to 4.
+            filter: A dictionary of metadata fields and values to filter by.
+                    Defaults to None.
+
+        Returns:
+            List of Documents most similar to the query vector.
+        """
+
+    @abstractmethod
     def max_marginal_relevance_search(  # type: ignore[override]
         self,
         query: str,
@@ -1001,39 +901,8 @@ class HanaDB(VectorStore):
         Returns:
             List of Documents selected by maximal marginal relevance.
         """
-        if not self.use_internal_embeddings:
-            embedding = self.embedding.embed_query(query)
-        else:
-            sql_str = (
-                "SELECT TO_NVARCHAR("
-                "VECTOR_EMBEDDING(:content, 'QUERY', :model_version)) FROM sys.DUMMY;"
-            )
-            cur = self.connection.cursor()
-            try:
-                cur.execute(
-                    sql_str,
-                    content=query,
-                    model_version=self.internal_embedding_model_id,
-                )
-                if cur.has_result_set():
-                    res = cur.fetchall()
-                    embedding = json.loads(res[0][0])
-            finally:
-                cur.close()
 
-        return self.max_marginal_relevance_search_by_vector(
-            embedding=embedding,
-            k=k,
-            fetch_k=fetch_k,
-            lambda_mult=lambda_mult,
-            filter=filter,
-            query=query,
-        )
-
-    def _parse_float_array_from_string(array_as_string: str) -> list[float]:  # type: ignore[misc]
-        array_wo_brackets = array_as_string[1:-1]
-        return [float(x) for x in array_wo_brackets.split(",")]
-
+    @abstractmethod
     def max_marginal_relevance_search_by_vector(  # type: ignore[override]
         self,
         embedding: list[float],
@@ -1041,10 +910,224 @@ class HanaDB(VectorStore):
         fetch_k: int = 20,
         lambda_mult: float = 0.5,
         filter: Optional[dict] = None,
-        query: Optional[str] = None,
+    ) -> list[Document]:
+        """Return docs selected using the maximal marginal relevance.
+
+        Maximal marginal relevance optimizes for similarity to query AND diversity
+        among selected documents.
+
+        Returns:
+            List of Documents selected by maximal marginal relevance.
+        """
+
+
+class _HanaDBWithExternalEmbeddings(HanaDB):
+    """SAP HANA Cloud Vector Engine implementation using external embeddings.
+
+    This implementation enables the use of any LangChain-compatible embedding model
+    (except HanaInternalEmbeddings) with SAP HANA's vector store capabilities.
+    It handles the generation of embeddings externally and manages their storage and
+    retrieval within the database.
+
+    Implementation Details:
+        - Embeddings are generated externally using the provided embedding model
+        - Vectors are stored in SAP HANA using TO_REAL_VECTOR for efficient storage
+        - Similarity search uses SAP HANA's vector operations for fast retrieval
+        - Supports both synchronous and asynchronous operations
+
+    Note:
+        This class is not meant to be instantiated directly. Instead, use HanaDB with
+        any embedding model except HanaInternalEmbeddings:
+        >>> from langchain_sap_hana_cloud import HanaDB
+        >>> from langchain_openai import OpenAIEmbeddings
+        >>> embedding = OpenAIEmbeddings()
+        >>> # Returns this implementation
+        >>> db = HanaDB(connection=conn, embedding=embedding)
+    """
+
+    def add_texts(
+        self,
+        texts: Iterable[str],
+        metadatas: Optional[list[dict]] = None,
+        embeddings: Optional[list[list[float]]] = None,
+        **kwargs: Any,
+    ) -> list[str]:
+        """Add more texts using external embeddings.
+
+        Args:
+            texts: Iterable of strings to add to the vectorstore.
+            metadatas: Optional list of metadatas associated with the texts.
+            embeddings: Optional list of pre-computed embeddings.
+
+        Returns:
+            List[str]: empty list
+        """
+        # Create all embeddings of the texts beforehand to improve performance
+        if embeddings is None:
+            embeddings = self.embedding.embed_documents(list(texts))
+
+        # Create sql parameters array
+        sql_params = []
+        for i, text in enumerate(texts):
+            metadata = metadatas[i] if metadatas else {}
+            metadata, extracted_special_metadata = self._split_off_special_metadata(
+                metadata
+            )
+            sql_params.append(
+                (
+                    text,
+                    json.dumps(HanaDB._sanitize_metadata_keys(metadata)),
+                    str(embeddings[i]),
+                    *extracted_special_metadata,
+                )
+            )
+
+        specific_metadata_columns_string = self._get_specific_metadata_columns_string()
+        sql_str = (
+            f'INSERT INTO "{self.table_name}" ("{self.content_column}", '
+            f'"{self.metadata_column}", '
+            f'"{self.vector_column}"{specific_metadata_columns_string}) '
+            f"VALUES (?, ?, TO_REAL_VECTOR (?)"
+            f"{', ?' * len(self.specific_metadata_columns)});"
+        )
+
+        # Insert data into the table
+        cur = self.connection.cursor()
+        try:
+            cur.executemany(sql_str, sql_params)
+        finally:
+            cur.close()
+        return []
+
+    def similarity_search_with_score(  # type: ignore[override]
+        self, query: str, k: int = 4, filter: Optional[dict] = None
+    ) -> list[tuple[Document, float]]:
+        """Return documents and score values most similar to query.
+
+        Args:
+            query: Text to look up documents similar to.
+            k: Number of Documents to return. Defaults to 4.
+            filter: A dictionary of metadata fields and values to filter by.
+                    Defaults to None.
+
+        Returns:
+            List of tuples (containing a Document and a score) that are
+            most similar to the query
+        """
+        embedding = self.embedding.embed_query(query)
+        return self.similarity_search_with_score_by_vector(
+            embedding=embedding, k=k, filter=filter
+        )
+
+    def similarity_search_with_score_by_vector(
+        self, embedding: list[float], k: int = 4, filter: Optional[dict] = None
+    ) -> list[tuple[Document, float]]:
+        """Return docs most similar to the given embedding.
+
+        Args:
+            query: Text to look up documents similar to.
+            k: Number of Documents to return. Defaults to 4.
+            filter: A dictionary of metadata fields and values to filter by.
+                    Defaults to None.
+
+        Returns:
+            List of Documents most similar to the query and score for each
+        """
+        whole_result = self.similarity_search_with_score_and_vector_by_vector(
+            embedding=embedding, k=k, filter=filter
+        )
+        return [(result_item[0], result_item[1]) for result_item in whole_result]
+
+    def similarity_search_with_score_and_vector_by_vector(
+        self, embedding: list[float], k: int = 4, filter: Optional[dict] = None
+    ) -> list[tuple[Document, float, list[float]]]:
+        """Return docs most similar to the given embedding.
+
+        Args:
+            embedding: Pre-computed embedding vector to search with.
+            k: Number of Documents to return. Defaults to 4.
+            filter: A dictionary of metadata fields and values to filter by.
+                    Defaults to None.
+
+        Returns:
+            List of tuples, each containing:
+            - Document: The matched document with its content and metadata
+            - float: The similarity score
+            - list[float]: The document's embedding vector
+        """
+        embedding_expr = f"TO_REAL_VECTOR ('{str(embedding)}')"
+
+        return self._similarity_search_with_score_and_vector(
+            embedding_expr, k=k, filter=filter
+        )
+
+    def similarity_search_by_vector(  # type: ignore[override]
+        self, embedding: list[float], k: int = 4, filter: Optional[dict] = None
+    ) -> list[Document]:
+        """Return docs most similar to embedding vector.
+
+        Args:
+            embedding: Embedding to look up documents similar to.
+            k: Number of Documents to return. Defaults to 4.
+            filter: A dictionary of metadata fields and values to filter by.
+                    Defaults to None.
+
+        Returns:
+            List of Documents most similar to the query vector.
+        """
+        docs_and_scores = self.similarity_search_with_score_by_vector(
+            embedding=embedding, k=k, filter=filter
+        )
+        return [doc for doc, _ in docs_and_scores]
+
+    def max_marginal_relevance_search(
+        self,
+        query: str,
+        k: int = 4,
+        fetch_k: int = 20,
+        lambda_mult: float = 0.5,
+        filter: Optional[dict] = None,
+    ) -> list[Document]:
+        """Return docs selected using the maximal marginal relevance.
+
+        Maximal marginal relevance optimizes for similarity to query AND diversity
+        among selected documents.
+
+        Args:
+            query: search query text.
+            k: Number of Documents to return. Defaults to 4.
+            fetch_k: Number of Documents to fetch to pass to MMR algorithm.
+            lambda_mult: Number between 0 and 1 that determines the degree
+                        of diversity among the results with 0 corresponding
+                        to maximum diversity and 1 to minimum diversity.
+                        Defaults to 0.5.
+            filter: Filter on metadata properties, e.g.
+                            {
+                                "str_property": "foo",
+                                "int_property": 123
+                            }
+        Returns:
+            List of Documents selected by maximal marginal relevance.
+        """
+        embedding = self.embedding.embed_query(query)
+        return self.max_marginal_relevance_search_by_vector(
+            embedding=embedding,
+            k=k,
+            fetch_k=fetch_k,
+            lambda_mult=lambda_mult,
+            filter=filter,
+        )
+
+    def max_marginal_relevance_search_by_vector(
+        self,
+        embedding: list[float],
+        k: int = 4,
+        fetch_k: int = 20,
+        lambda_mult: float = 0.5,
+        filter: Optional[dict] = None,
     ) -> list[Document]:
         whole_result = self.similarity_search_with_score_and_vector_by_vector(
-            embedding=embedding, k=fetch_k, filter=filter, query=query
+            embedding=embedding, k=fetch_k, filter=filter
         )
         embeddings = [result_item[2] for result_item in whole_result]
         mmr_doc_indexes = maximal_marginal_relevance(
@@ -1053,43 +1136,345 @@ class HanaDB(VectorStore):
 
         return [whole_result[i][0] for i in mmr_doc_indexes]
 
-    async def amax_marginal_relevance_search_by_vector(  # type: ignore[override]
+
+class _HanaDBWithInternalEmbeddings(HanaDB):
+    """SAP HANA Cloud Vector Engine implementation using internal embeddings.
+
+    This implementation leverages SAP HANA's built-in VECTOR_EMBEDDING function for
+    generating embeddings directly within the database. This approach provides several
+    key advantages:
+        - Superior Performance: Embeddings are generated inside the database,
+          eliminating data transfer overhead
+        - Reduced Network Traffic: No need to send large text data to external services
+        - Lower Latency: Direct integration with the database engine
+
+    Key Features:
+        - In-database embedding generation using VECTOR_EMBEDDING function
+        - Optimized for SAP HANA's internal embedding models
+        - Automatic validation of embedding function availability
+        - Support for document and query embedding types
+
+    Requirements:
+        - SAP HANA instance with Vector Engine capability
+        - Appropriate permissions for VECTOR_EMBEDDING function
+        - Valid model ID for the internal embedding model
+
+    Note:
+        This class is not meant to be instantiated directlyInstead, use HanaDB with
+        a HanaInternalEmbeddings instance, and the factory will create this
+        implementation:
+        >>> from langchain_sap_hana_cloud import HanaDB, HanaInternalEmbeddings
+        >>> embedding = HanaInternalEmbeddings(model_id="<model_id>")
+        >>> # Returns this implementation
+        >>> db = HanaDB(connection=conn, embedding=embedding)
+    """
+
+    def __init__(
+        self,
+        connection: dbapi.Connection,
+        embedding: HanaInternalEmbeddings,
+        distance_strategy: DistanceStrategy = default_distance_strategy,
+        table_name: str = default_table_name,
+        content_column: str = default_content_column,
+        metadata_column: str = default_metadata_column,
+        vector_column: str = default_vector_column,
+        vector_column_length: int = default_vector_column_length,
+        *,
+        specific_metadata_columns: Optional[list[str]] = None,
+    ):
+        super().__init__(
+            connection=connection,
+            embedding=embedding,
+            distance_strategy=distance_strategy,
+            table_name=table_name,
+            content_column=content_column,
+            metadata_column=metadata_column,
+            vector_column=vector_column,
+            vector_column_length=vector_column_length,
+            specific_metadata_columns=specific_metadata_columns,
+        )
+        self.internal_embedding_model_id = embedding.get_model_id()
+        self._validate_internal_embedding_function()
+
+    def add_texts(
+        self,
+        texts: Iterable[str],
+        metadatas: Optional[list[dict]] = None,
+        embeddings: Optional[list[list[float]]] = None,
+        **kwargs: Any,
+    ) -> list[str]:
+        """Add more texts using internal embeddings.
+
+        Args:
+            texts: Iterable of strings to add to the vectorstore.
+            metadatas: Optional list of metadatas associated with the texts.
+            embeddings: When using internal embedding function, embeddings will be "
+            "ignored even if they are provided
+
+        Returns:
+            List[str]: empty list
+        """
+        sql_params = []
+        for i, text in enumerate(texts):
+            metadata = metadatas[i] if metadatas else {}
+            metadata, extracted_special_metadata = self._split_off_special_metadata(
+                metadata
+            )
+            parameters = {
+                "content": text,  # Replace `content_value` with the actual value
+                "metadata": json.dumps(
+                    HanaDB._sanitize_metadata_keys(metadata)
+                ),  # Replace `metadata_value` with the actual value
+                "model_version": self.internal_embedding_model_id,
+            }
+            parameters.update(
+                {
+                    col: value
+                    for col, value in zip(
+                        self.specific_metadata_columns, extracted_special_metadata
+                    )
+                }
+            )  # specific_metadata_values must align with the columns
+            sql_params.append(parameters)
+
+        specific_metadata_str = ", ".join(
+            f":{col}" for col in self.specific_metadata_columns
+        )
+        specific_metadata_columns_string = self._get_specific_metadata_columns_string()
+
+        sql_str = (
+            f'INSERT INTO "{self.table_name}" ("{self.content_column}", '
+            f'"{self.metadata_column}", '
+            f'"{self.vector_column}"{specific_metadata_columns_string}) '
+            f"VALUES (:content, :metadata, VECTOR_EMBEDDING"
+            f"(:content, 'DOCUMENT', :model_version) "
+            f"{(', ' + specific_metadata_str) if specific_metadata_str else ''});"
+        )
+
+        # Insert data into the table
+        cur = self.connection.cursor()
+        try:
+            cur.executemany(sql_str, sql_params)
+        finally:
+            cur.close()
+        return []
+
+    def _validate_internal_embedding_function(self) -> None:
+        """
+        Ping the database to check if the in-database embedding function
+            exists and works.
+        Raises:
+            RuntimeError: If the embedding function does not exist or fails.
+        """
+        cur = self.connection.cursor()
+        try:
+            # Test the VECTOR_EMBEDDING function by executing a simple query
+            cur.execute(
+                (
+                    "SELECT TO_NVARCHAR("
+                    "VECTOR_EMBEDDING('test', 'QUERY', :model_version))"
+                    "FROM sys.DUMMY;"
+                ),
+                model_version=self.internal_embedding_model_id,
+            )
+            cur.fetchall()  # Ensure the query runs successfully
+
+        except Exception as e:  # Catch all database-related exceptions
+            raise RuntimeError(
+                f"Validation of the internal embedding function failed: {str(e)}. "
+            )
+        finally:
+            cur.close()
+
+    def similarity_search_with_score(
+        self, query: str, k: int = 4, filter: Optional[dict] = None
+    ) -> list[tuple[Document, float]]:
+        """Return documents and score values most similar to query.
+
+        Args:
+            query: Text to look up documents similar to.
+            k: Number of Documents to return. Defaults to 4.
+            filter: A dictionary of metadata fields and values to filter by.
+                    Defaults to None.
+
+        Returns:
+            List of tuples (containing a Document and a score) that are
+            most similar to the query
+        """
+        return self.similarity_search_with_score_by_query(
+            query=query, k=k, filter=filter
+        )
+
+    def similarity_search_by_vector(
+        self, embedding: list[float], k: int = 4, filter: Optional[dict] = None
+    ) -> list[Document]:
+        raise NotImplementedError(
+            "The method 'similarity_search_by_vector' is not supported "
+            "when using HANA's internal embeddings"
+        )
+
+    def similarity_search_by_query(
+        self, query: str, k: int = 4, filter: Optional[dict] = None
+    ) -> list[Document]:
+        """Return docs most similar to the given query.
+        The query is vectorized in the database.
+
+        Args:
+            query: Text to look up documents similar to.
+            k: Number of Documents to return. Defaults to 4.
+            filter: A dictionary of metadata fields and values to filter by.
+                    Defaults to None.
+
+        Returns:
+            List of Documents most similar to the query vector.
+        """
+        docs_and_scores = self.similarity_search_with_score_by_query(
+            query=query, k=k, filter=filter
+        )
+        return [doc for doc, _ in docs_and_scores]
+
+    def similarity_search_with_score_by_query(
+        self,
+        query: str,
+        k: int = 4,
+        filter: Optional[dict] = None,
+    ) -> list[tuple[Document, float]]:
+        """Return docs most similar to the given embedding or query.
+        The query is vectorized in the database.
+
+        Args:
+            query: Text to look up documents similar to.
+            k: Number of Documents to return. Defaults to 4.
+            filter: A dictionary of metadata fields and values to filter by.
+                    Defaults to None.
+
+        Returns:
+            list of Documents most similar to the query and score for each
+        """
+        whole_result = self.similarity_search_with_score_and_vector_by_query(
+            query=query, k=k, filter=filter
+        )
+        return [(result_item[0], result_item[1]) for result_item in whole_result]
+
+    def similarity_search_with_score_and_vector_by_query(
+        self, query: str, k: int = 4, filter: Optional[dict] = None
+    ) -> list[tuple[Document, float, list[float]]]:
+        """Return docs most similar to the given embedding.
+        The query is vectorized in the database.
+
+        Args:
+            query: Text to look up documents similar to.
+            k: Number of Documents to return. Defaults to 4.
+            filter: A dictionary of metadata fields and values to filter by.
+                    Defaults to None.
+
+        Returns:
+            List of tuples, each containing:
+            - Document: The matched document with its content and metadata
+            - float: The similarity score
+            - list[float]: The document's embedding vector
+        """
+        embedding_expr = "VECTOR_EMBEDDING(?, 'QUERY', ?)"
+        vector_embedding_params = [query, self.internal_embedding_model_id]
+        return self._similarity_search_with_score_and_vector(
+            embedding_expr,
+            vector_embedding_params=vector_embedding_params,
+            k=k,
+            filter=filter,
+        )
+
+    def max_marginal_relevance_search(
+        self,
+        query: str,
+        k: int = 4,
+        fetch_k: int = 20,
+        lambda_mult: float = 0.5,
+        filter: Optional[dict] = None,
+    ) -> list[Document]:
+        """Return docs selected using the maximal marginal relevance.
+
+        Maximal marginal relevance optimizes for similarity to query AND diversity
+        among selected documents.
+
+        Args:
+            query: search query text.
+            k: Number of Documents to return. Defaults to 4.
+            fetch_k: Number of Documents to fetch to pass to MMR algorithm.
+            lambda_mult: Number between 0 and 1 that determines the degree
+                        of diversity among the results with 0 corresponding
+                        to maximum diversity and 1 to minimum diversity.
+                        Defaults to 0.5.
+            filter: Filter on metadata properties, e.g.
+                            {
+                                "str_property": "foo",
+                                "int_property": 123
+                            }
+        Returns:
+            List of Documents selected by maximal marginal relevance.
+        """
+
+        return self.max_marginal_relevance_search_by_query(
+            query=query,
+            k=k,
+            fetch_k=fetch_k,
+            lambda_mult=lambda_mult,
+            filter=filter,
+        )
+
+    def max_marginal_relevance_search_by_query(
+        self,
+        query: str,
+        k: int = 4,
+        fetch_k: int = 20,
+        lambda_mult: float = 0.5,
+        filter: Optional[dict] = None,
+    ) -> list[Document]:
+        """Return docs selected using the maximal marginal relevance.
+
+        Maximal marginal relevance optimizes for similarity to query AND diversity
+        among selected documents.
+
+        Similar documents with their embeddings are retrived
+        using query which is vectorized in database.
+        Additionally, the query is embedded using internal embedding function
+        """
+        sql_str = (
+            "SELECT TO_NVARCHAR("
+            "VECTOR_EMBEDDING(:content, 'QUERY', :model_version)) FROM sys.DUMMY;"
+        )
+        embedding = None
+        cur = self.connection.cursor()
+        try:
+            cur.execute(
+                sql_str,
+                content=query,
+                model_version=self.internal_embedding_model_id,
+            )
+            if cur.has_result_set():
+                res = cur.fetchall()
+                embedding = json.loads(res[0][0])
+        finally:
+            cur.close()
+
+        whole_result = self.similarity_search_with_score_and_vector_by_query(
+            query=query, k=fetch_k, filter=filter
+        )
+        embeddings = [result_item[2] for result_item in whole_result]
+        mmr_doc_indexes = maximal_marginal_relevance(
+            np.array(embedding), embeddings, lambda_mult=lambda_mult, k=k
+        )
+
+        return [whole_result[i][0] for i in mmr_doc_indexes]
+
+    def max_marginal_relevance_search_by_vector(
         self,
         embedding: list[float],
         k: int = 4,
         fetch_k: int = 20,
         lambda_mult: float = 0.5,
+        filter: Optional[dict] = None,
     ) -> list[Document]:
-        """Return docs selected using the maximal marginal relevance."""
-        return await run_in_executor(
-            None,
-            self.max_marginal_relevance_search_by_vector,
-            embedding=embedding,
-            k=k,
-            fetch_k=fetch_k,
-            lambda_mult=lambda_mult,
+        raise NotImplementedError(
+            "The method 'max_marginal_relevance_search_by_vector' is not supported "
+            "when using HANA's internal embeddings"
         )
-
-    @staticmethod
-    def _cosine_relevance_score_fn(distance: float) -> float:
-        return distance
-
-    def _select_relevance_score_fn(self) -> Callable[[float], float]:
-        """
-        The 'correct' relevance function
-        may differ depending on a few things, including:
-        - the distance / similarity metric used by the VectorStore
-        - the scale of your embeddings (OpenAI's are unit normed. Many others are not!)
-        - embedding dimensionality
-        - etc.
-
-        Vectorstores should define their own selection based method of relevance.
-        """
-        if self.distance_strategy == DistanceStrategy.COSINE:
-            return HanaDB._cosine_relevance_score_fn
-        elif self.distance_strategy == DistanceStrategy.EUCLIDEAN_DISTANCE:
-            return HanaDB._euclidean_relevance_score_fn
-        else:
-            raise ValueError(
-                "Unsupported distance_strategy: {}".format(self.distance_strategy)
-            )
