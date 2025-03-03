@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  # push:
+  #   branches: [ "main" ]
+  # pull_request:
+  #   branches: [ "main" ]
+  workflow_dispatch: 
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    # The 'env:' block at the job level makes these variables available in all steps.
+    env:
+      HANA_DB_ADDRESS: ${{ secrets.HANA_DB_ADDRESS }}
+      HANA_DB_PORT: ${{ secrets.HANA_DB_PORT }}
+      HANA_DB_USER: ${{ secrets.HANA_DB_USER }}
+      HANA_DB_PASSWORD: ${{ secrets.HANA_DB_PASSWORD }}
+      HANA_DB_EMBEDDING_MODEL_ID: ${{ secrets.HANA_DB_EMBEDDING_MODEL_ID }}
+
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Upgrade pip
+        run: pip install --upgrade pip
+
+      - name: Install main dependencies
+        run: pip install .
+
+      - name: Install test dependencies
+        run: pip install pytest pytest-asyncio pytest-socket pytest-watcher langchain-tests
+
+      - name: Run Unit Tests
+        id: unit_tests
+        run: pytest tests/unit_tests/
+
+      - name: Run Integration Tests
+        id: integration_tests
+        run: pytest tests/integration_tests/
+
