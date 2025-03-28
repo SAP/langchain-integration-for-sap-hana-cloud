@@ -62,6 +62,12 @@ default_vector_column: str = "VEC_VECTOR"
 default_vector_column_length: int = -1  # -1 means dynamic length
 
 
+# Enum to represent vector column types
+class VectorColumnType:
+    REAL_VECTOR = "REAL_VECTOR"
+    HALF_VECTOR = "HALF_VECTOR"
+
+
 class HanaDB(VectorStore):
     """SAP HANA Cloud Vector Engine
 
@@ -83,6 +89,7 @@ class HanaDB(VectorStore):
         metadata_column: str = default_metadata_column,
         vector_column: str = default_vector_column,
         vector_column_length: int = default_vector_column_length,
+        vector_column_type: str = VectorColumnType.REAL_VECTOR,
         *,
         specific_metadata_columns: Optional[list[str]] = None,
     ):
@@ -102,6 +109,9 @@ class HanaDB(VectorStore):
         self.metadata_column = HanaDB._sanitize_name(metadata_column)
         self.vector_column = HanaDB._sanitize_name(vector_column)
         self.vector_column_length = HanaDB._sanitize_int(vector_column_length)
+        self.vector_column_type = HanaDB._sanitize_vector_column_type(
+            vector_column_type
+        )
         self.specific_metadata_columns = HanaDB._sanitize_specific_metadata_columns(
             specific_metadata_columns or []
         )
@@ -138,7 +148,7 @@ class HanaDB(VectorStore):
                 f'CREATE TABLE "{self.table_name}"('
                 f'"{self.content_column}" NCLOB, '
                 f'"{self.metadata_column}" NCLOB, '
-                f'"{self.vector_column}" REAL_VECTOR '
+                f'"{self.vector_column}" {self.vector_column_type} '
             )
             if self.vector_column_length in [-1, 0]:
                 sql_str += ");"
@@ -157,7 +167,7 @@ class HanaDB(VectorStore):
         self._check_column(
             self.table_name,
             self.vector_column,
-            ["REAL_VECTOR"],
+            [self.vector_column_type],
             self.vector_column_length,
         )
         for column_name in self.specific_metadata_columns:
@@ -282,15 +292,36 @@ class HanaDB(VectorStore):
         return metadata_columns
 
     @staticmethod
-    def _serialize_fvecs(values: list[float]) -> bytes:
-        # Converts a list of floats into FVECS binary format
-        return struct.pack(f"<I{len(values)}f", len(values), *values)
+    def _sanitize_vector_column_type(vector_column_type: VectorColumnType) -> str:
+        if vector_column_type not in [
+            VectorColumnType.REAL_VECTOR,
+            VectorColumnType.HALF_VECTOR,
+        ]:
+            raise ValueError(
+                f"Unsupported vector_column_type: {vector_column_type}. "
+                f"Must be one of {VectorColumnType.REAL_VECTOR} "
+                f"or {VectorColumnType.HALF_VECTOR}"
+            )
+        return vector_column_type
 
-    @staticmethod
-    def _deserialize_fvecs(fvecs: bytes) -> list[float]:
+    def _serialize_fvecs(self, values: list[float]) -> bytes:
+        # Converts a list of floats into FVECS binary format
+        if self.vector_column_type == VectorColumnType.HALF_VECTOR:
+            # 2-byte half-precision float serialization
+            return struct.pack(f"<I{len(values)}e", len(values), *values)
+        else:
+            # 4-byte float serialization
+            return struct.pack(f"<I{len(values)}f", len(values), *values)
+
+    def _deserialize_fvecs(self, fvecs: bytes) -> list[float]:
         # Extracts a list of floats from FVECS binary format
         dim = struct.unpack_from("<I", fvecs, 0)[0]
-        return list(struct.unpack_from("<%sf" % dim, fvecs, 4))
+        if self.vector_column_type == VectorColumnType.HALF_VECTOR:
+            # 2-byte half-precision float deserialization
+            return list(struct.unpack_from("<%se" % dim, fvecs, 4))
+        else:
+            # 4-byte float deserialization
+            return list(struct.unpack_from("<%sf" % dim, fvecs, 4))
 
     def _split_off_special_metadata(self, metadata: dict) -> tuple[dict, list]:
         # Use provided values by default or fallback
@@ -303,6 +334,36 @@ class HanaDB(VectorStore):
             special_metadata.append(metadata.get(column_name, None))
 
         return metadata, special_metadata
+
+    def _get_vector_conversion_function(self) -> str:
+        """
+        Get the appropriate vector conversion function based on vector column type
+
+        Returns:
+            SQL function name for vector conversion (TO_REAL_VECTOR or TO_HALF_VECTOR)
+        """
+        if self.vector_column_type == VectorColumnType.REAL_VECTOR:
+            return "TO_REAL_VECTOR"
+        elif self.vector_column_type == VectorColumnType.HALF_VECTOR:
+            return "TO_HALF_VECTOR"
+        else:
+            raise ValueError(f"Unsupported vector type: {self.vector_column_type}")
+
+    def _conditionally_wrap_half_vector(self, expr: str) -> str:
+        """
+        Conditionally wraps a SQL expression with TO_HALF_VECTOR(...)
+        based on the vector column type.
+
+        Args:
+            expr (str): SQL expression producing an embedding vector.
+
+        Returns:
+            str: Wrapped expression if vector column type is HALF_VECTOR,
+                otherwise the original expression.
+        """
+        if self.vector_column_type == VectorColumnType.HALF_VECTOR:
+            return f"TO_HALF_VECTOR({expr})"
+        return expr
 
     def create_hnsw_index(
         self,
@@ -441,7 +502,7 @@ class HanaDB(VectorStore):
                 (
                     text,
                     json.dumps(HanaDB._sanitize_metadata_keys(metadata)),
-                    HanaDB._serialize_fvecs(embeddings[i]),
+                    self._serialize_fvecs(embeddings[i]),
                     *extracted_special_metadata,
                 )
             )
@@ -499,12 +560,17 @@ class HanaDB(VectorStore):
         )
         specific_metadata_columns_string = self._get_specific_metadata_columns_string()
 
+        # Wrap VECTOR_EMBEDDING with vector type conversion if needed
+        vector_embedding_sql = "VECTOR_EMBEDDING(:content, 'DOCUMENT', :model_version)"
+        vector_embedding_sql = self._conditionally_wrap_half_vector(
+            vector_embedding_sql
+        )
+
         sql_str = (
             f'INSERT INTO "{self.table_name}" ("{self.content_column}", '
             f'"{self.metadata_column}", '
             f'"{self.vector_column}"{specific_metadata_columns_string}) '
-            f"VALUES (:content, :metadata, VECTOR_EMBEDDING"
-            f"(:content, 'DOCUMENT', :model_version) "
+            f"VALUES (:content, :metadata, {vector_embedding_sql} "
             f"{(', ' + specific_metadata_str) if specific_metadata_str else ''});"
         )
 
@@ -539,6 +605,7 @@ class HanaDB(VectorStore):
         metadata_column: str = default_metadata_column,
         vector_column: str = default_vector_column,
         vector_column_length: int = default_vector_column_length,
+        vector_column_type: str = VectorColumnType.HALF_VECTOR,
         *,
         specific_metadata_columns: Optional[list[str]] = None,
     ):
@@ -559,6 +626,7 @@ class HanaDB(VectorStore):
             metadata_column=metadata_column,
             vector_column=vector_column,
             vector_column_length=vector_column_length,  # -1 means dynamic length
+            vector_column_type=vector_column_type,
             specific_metadata_columns=specific_metadata_columns,
         )
         instance.add_texts(texts, metadatas)
@@ -630,7 +698,9 @@ class HanaDB(VectorStore):
             - float: The similarity score
             - list[float]: The document's embedding vector
         """
-        embedding_expr = f"TO_REAL_VECTOR ('{str(embedding)}')"
+        # Use the appropriate vector conversion function
+        vector_conversion_func = self._get_vector_conversion_function()
+        embedding_expr = f"{vector_conversion_func} ('{str(embedding)}')"
 
         return self._similarity_search_with_score_and_vector(
             embedding_expr, k=k, filter=filter
@@ -669,9 +739,12 @@ class HanaDB(VectorStore):
             )
 
         embedding_expr = "VECTOR_EMBEDDING(?, 'QUERY', ?)"
+        # Wrap VECTOR_EMBEDDING with vector type conversion if needed
+        vector_embedding_sql = self._conditionally_wrap_half_vector(embedding_expr)
+
         vector_embedding_params = [query, self.internal_embedding_model_id]
         return self._similarity_search_with_score_and_vector(
-            embedding_expr,
+            vector_embedding_sql,
             vector_embedding_params=vector_embedding_params,
             k=k,
             filter=filter,
@@ -746,7 +819,7 @@ class HanaDB(VectorStore):
                 for row in rows:
                     js = json.loads(row[1])
                     doc = Document(page_content=row[0], metadata=js)
-                    result_vector = HanaDB._deserialize_fvecs(row[2])
+                    result_vector = self._deserialize_fvecs(row[2])
                     result.append((doc, row[3], result_vector))
         finally:
             cur.close()
@@ -1042,10 +1115,12 @@ class HanaDB(VectorStore):
         if not self.use_internal_embeddings:
             embedding = self.embedding.embed_query(query)
         else:  # generates embedding using the internal embedding function of HanaDb
-            sql_str = (
-                "SELECT VECTOR_EMBEDDING(:content, 'QUERY', :model_version) "
-                "FROM sys.DUMMY;"
+            # Wrap VECTOR_EMBEDDING with vector type conversion if needed
+            vector_embedding_sql = "VECTOR_EMBEDDING(:content, 'QUERY', :model_version)"
+            vector_embedding_sql = self._conditionally_wrap_half_vector(
+                vector_embedding_sql
             )
+            sql_str = f"SELECT {vector_embedding_sql} FROM sys.DUMMY;"
             cur = self.connection.cursor()
             try:
                 cur.execute(
@@ -1055,7 +1130,7 @@ class HanaDB(VectorStore):
                 )
                 if cur.has_result_set():
                     res = cur.fetchall()
-                    embedding = HanaDB._deserialize_fvecs(res[0][0])
+                    embedding = self._deserialize_fvecs(res[0][0])
             finally:
                 cur.close()
 
