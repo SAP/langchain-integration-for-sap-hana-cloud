@@ -1001,6 +1001,20 @@ class HanaDB(VectorStore):
             where_str = " WHERE " + where_str
         return where_str, query_tuple
 
+    @staticmethod
+    def _apply_param_cast(py_type: type, is_date: bool = False) -> str:
+        """
+        Return a placeholder wrapped in the appropriate HANA conversion
+        function, e.g. TO_DOUBLE(?), TO_BOOLEAN(?), TO_DATE(?), or just "?".
+        """
+        if is_date:
+            return "TO_DATE(?)"
+        if py_type is bool:
+            return "TO_BOOLEAN(?)"
+        if py_type in (int, float):
+            return "TO_DOUBLE(?)"
+        return "?"
+
     def _process_filter_object(self, filter):  # type: ignore[no-untyped-def]
         query_tuple = []
         where_str = ""
@@ -1029,8 +1043,10 @@ class HanaDB(VectorStore):
                 sql_param = "?"
 
                 if isinstance(filter_value, bool):
+                    sql_param = HanaDB._apply_param_cast(bool)
                     query_tuple.append("true" if filter_value else "false")
                 elif isinstance(filter_value, int) or isinstance(filter_value, str):
+                    sql_param = HanaDB._apply_param_cast(type(filter_value))
                     query_tuple.append(filter_value)
                 elif isinstance(filter_value, dict):
                     # Handling of 'special' operators starting with "$"
@@ -1040,9 +1056,10 @@ class HanaDB(VectorStore):
                     if special_op in COMPARISONS_TO_SQL:
                         operator = COMPARISONS_TO_SQL[special_op]
                         if isinstance(special_val, bool):
+                            sql_param = HanaDB._apply_param_cast(bool)
                             query_tuple.append("true" if special_val else "false")
                         elif isinstance(special_val, float):
-                            sql_param = "CAST(? as float)"
+                            sql_param = HanaDB._apply_param_cast(float)
                             query_tuple.append(special_val)
                         elif (
                             isinstance(special_val, dict)
@@ -1050,16 +1067,21 @@ class HanaDB(VectorStore):
                             and special_val["type"] == "date"
                         ):
                             # Date type
-                            sql_param = "CAST(? as DATE)"
+                            sql_param = HanaDB._apply_param_cast(str, is_date=True)
                             query_tuple.append(special_val["date"])
                         else:
+                            sql_param = HanaDB._apply_param_cast(type(special_val))
                             query_tuple.append(special_val)
                     # "$between"
                     elif special_op == BETWEEN_OPERATOR:
                         between_from = special_val[0]
                         between_to = special_val[1]
                         operator = "BETWEEN"
-                        sql_param = "? AND ?"
+                        sql_param = (
+                            HanaDB._apply_param_cast(type(between_from))
+                            + " AND "
+                            + HanaDB._apply_param_cast(type(between_to))
+                        )
                         query_tuple.append(between_from)
                         query_tuple.append(between_to)
                     # "$like"
@@ -1073,20 +1095,28 @@ class HanaDB(VectorStore):
                     # "$in", "$nin"
                     elif special_op in IN_OPERATORS_TO_SQL:
                         operator = IN_OPERATORS_TO_SQL[special_op]
-                        if isinstance(special_val, list):
-                            for i, list_entry in enumerate(special_val):
-                                if i == 0:
-                                    sql_param = "("
-                                sql_param = sql_param + "?"
-                                if i == (len(special_val) - 1):
-                                    sql_param = sql_param + ")"
-                                else:
-                                    sql_param = sql_param + ","
-                                query_tuple.append(list_entry)
-                        else:
+                        if not isinstance(special_val, list):
                             raise ValueError(
-                                f"Unsupported value for {operator}: {special_val}"
+                                f"Value for operator '{special_op}' must be a list, "
+                                f"got {type(special_val).__name__}"
                             )
+                        if len(special_val) == 0:
+                            description = (
+                                "will never match any rows"
+                                if special_op == "$in"
+                                else "is a no-op (matches all rows)"
+                            )
+                            raise ValueError(
+                                f"Empty list passed to filter operator '{special_op}'. "
+                                f"{'$in' if special_op == '$in' else '$nin'} with an "
+                                f"empty list  {description}."
+                            )
+                        placeholders = []
+                        for val in special_val:
+                            placeholders.append(HanaDB._apply_param_cast(type(val)))
+                            query_tuple.append(val)
+                        sql_param = "(" + ", ".join(placeholders) + ")"
+
                     else:
                         raise ValueError(f"Unsupported operator: {special_op}")
                 else:
