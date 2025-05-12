@@ -26,12 +26,54 @@ To set up the development environment, follow these steps:
 3. Run the following command to install all necessary dependencies:
 
    ```bash
-   poetry install --with lint,typing,test,test_integration
+   poetry install --with lint,typing,test,test_integration,coverage
    ```
 
-   This command installs dependencies for development, including those for linting, formatting, spell-checking, and testing.
+   This command installs dependencies for development, including those for linting, formatting, spell-checking, testing, and coverage.
 
 4. You are now ready to work on the package!
+
+---
+
+## Running Tests with Coverage
+
+To ensure code quality and test coverage, you can generate a coverage report for the project. Follow these steps:
+
+1. Run the following command to execute tests and generate a coverage report:
+
+   ```bash
+   make coverage
+   ```
+
+2. After running the command, an HTML coverage report will be generated in the `htmlcov` directory. Open the `htmlcov/index.html` file in your browser to view the coverage details.
+
+This ensures that all parts of the code are adequately tested and helps identify untested areas.
+
+---
+
+## Viewing Coverage Report Locally
+
+After generating the coverage report, you can serve it locally using Python's built-in HTTP server. This allows you to view the report in your browser without manually opening the file.
+
+1. Navigate to the `htmlcov` directory:
+
+   ```bash
+   cd htmlcov
+   ```
+
+2. Start a local HTTP server using Python:
+
+   ```bash
+   python3 -m http.server
+   ```
+
+3. Open your browser and go to the following URL to view the coverage report:
+
+   ```
+   http://localhost:8000
+   ```
+
+This will serve the `htmlcov` directory on port 8000, making it easy to access the coverage report.
 
 ---
 

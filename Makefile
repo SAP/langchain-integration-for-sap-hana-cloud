@@ -19,6 +19,11 @@ test_watch:
 integration_test integration_tests:
 	poetry run pytest $(TEST_FILE)
 
+coverage:
+	poetry run coverage run --source=langchain_hana -m pytest $(TEST_FILE)
+	poetry run coverage html
+	@echo 'Coverage report generated in htmlcov/index.html. Open this file in your browser to view the coverage.'
+
 ######################
 # LINTING AND FORMATTING
 ######################
@@ -64,3 +69,4 @@ help:
 	@echo 'integration_test TEST_FILE=<test_file> - run integration tests in a file'
 	@echo 'lint_diff                              - lint only files changed since the last commit'
 	@echo 'format_diff                            - format only files changed since the last commit'
+	@echo 'coverage                               - run tests with coverage measurement and generate an HTML report'
