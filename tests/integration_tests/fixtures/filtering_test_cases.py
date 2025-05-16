@@ -53,30 +53,41 @@ TYPE_1_FILTERING_TEST_CASES = [
     (
         {"id": 1},
         [1],
+        "WHERE JSON_VALUE(VEC_META, '$.id') = TO_DOUBLE(?)",
+        [1],
     ),
     # String field
     (
-        # check name
         {"name": "adam"},
         [1],
+        "WHERE JSON_VALUE(VEC_META, '$.name') = ?",
+        ["adam"],
     ),
     # Boolean fields
     (
         {"is_active": True},
         [1, 3],
+        "WHERE JSON_VALUE(VEC_META, '$.is_active') = TO_BOOLEAN(?)",
+        ["true"],
     ),
     (
         {"is_active": False},
         [2],
+        "WHERE JSON_VALUE(VEC_META, '$.is_active') = TO_BOOLEAN(?)",
+        ["false"],
     ),
     # And semantics for top level filtering
     (
         {"id": 1, "is_active": True},
         [1],
+        "WHERE (JSON_VALUE(VEC_META, '$.id') = TO_DOUBLE(?)) AND (JSON_VALUE(VEC_META, '$.is_active') = TO_BOOLEAN(?))",
+        [1, "true"],
     ),
     (
         {"id": 1, "is_active": False},
         [],
+        "WHERE (JSON_VALUE(VEC_META, '$.id') = TO_DOUBLE(?)) AND (JSON_VALUE(VEC_META, '$.is_active') = TO_BOOLEAN(?))",
+        [1, "false"],
     ),
 ]
 
@@ -86,85 +97,125 @@ TYPE_2_FILTERING_TEST_CASES = [
     (
         {"id": 1},
         [1],
+        "WHERE JSON_VALUE(VEC_META, '$.id') = TO_DOUBLE(?)",
+        [1],
     ),
     (
         {"id": {"$ne": 1}},
         [2, 3],
+        "WHERE JSON_VALUE(VEC_META, '$.id') <> TO_DOUBLE(?)",
+        [1],
     ),
     (
         {"id": {"$gt": 1}},
         [2, 3],
+        "WHERE JSON_VALUE(VEC_META, '$.id') > TO_DOUBLE(?)",
+        [1],
     ),
     (
         {"id": {"$gte": 1}},
         [1, 2, 3],
+        "WHERE JSON_VALUE(VEC_META, '$.id') >= TO_DOUBLE(?)",
+        [1],
     ),
     (
         {"id": {"$lt": 1}},
         [],
+        "WHERE JSON_VALUE(VEC_META, '$.id') < TO_DOUBLE(?)",
+        [1],
     ),
     (
         {"id": {"$lte": 1}},
+        [1],
+        "WHERE JSON_VALUE(VEC_META, '$.id') <= TO_DOUBLE(?)",
         [1],
     ),
     # Repeat all the same tests with name (string column)
     (
         {"name": "adam"},
         [1],
+        "WHERE JSON_VALUE(VEC_META, '$.name') = ?",
+        ["adam"],
     ),
     (
         {"name": "bob"},
         [2],
+        "WHERE JSON_VALUE(VEC_META, '$.name') = ?",
+        ["bob"],
     ),
     (
         {"name": {"$eq": "adam"}},
         [1],
+        "WHERE JSON_VALUE(VEC_META, '$.name') = ?",
+        ["adam"],
     ),
     (
         {"name": {"$ne": "adam"}},
         [2, 3],
+        "WHERE JSON_VALUE(VEC_META, '$.name') <> ?",
+        ["adam"],
     ),
     # And also gt, gte, lt, lte relying on lexicographical ordering
     (
         {"name": {"$gt": "jane"}},
         [],
+        "WHERE JSON_VALUE(VEC_META, '$.name') > ?",
+        ["jane"],
     ),
     (
         {"name": {"$gte": "jane"}},
         [3],
+        "WHERE JSON_VALUE(VEC_META, '$.name') >= ?",
+        ["jane"],
     ),
     (
         {"name": {"$lt": "jane"}},
         [1, 2],
+        "WHERE JSON_VALUE(VEC_META, '$.name') < ?",
+        ["jane"],
     ),
     (
         {"name": {"$lte": "jane"}},
         [1, 2, 3],
+        "WHERE JSON_VALUE(VEC_META, '$.name') <= ?",
+        ["jane"],
     ),
     (
         {"is_active": {"$eq": True}},
         [1, 3],
+        "WHERE JSON_VALUE(VEC_META, '$.is_active') = TO_BOOLEAN(?)",
+        ["true"],
     ),
     (
         {"is_active": {"$ne": True}},
         [2],
+        "WHERE JSON_VALUE(VEC_META, '$.is_active') <> TO_BOOLEAN(?)",
+        ["true"],
     ),
     # Test float column.
     (
         {"height": {"$gt": 5.0}},
         [1, 2],
+        "WHERE JSON_VALUE(VEC_META, '$.height') > TO_DOUBLE(?)",
+        [5.0],
     ),
     (
         {"height": {"$gte": 5.0}},
         [1, 2],
+        "WHERE JSON_VALUE(VEC_META, '$.height') >= TO_DOUBLE(?)",
+        [5.0],
     ),
     (
         {"height": {"$lt": 5.0}},
         [3],
+        "WHERE JSON_VALUE(VEC_META, '$.height') < TO_DOUBLE(?)",
+        [5.0],
     ),
     (
         {"height": {"$lte": 5.8}},
         [2, 3],
+        "WHERE JSON_VALUE(VEC_META, '$.height') <= TO_DOUBLE(?)",
+        [5.8],
     ),
 ]
 
@@ -173,17 +224,25 @@ TYPE_3_FILTERING_TEST_CASES = [
     (
         {"$or": [{"id": 1}, {"id": 2}]},
         [1, 2],
+        "WHERE (JSON_VALUE(VEC_META, '$.id') = TO_DOUBLE(?)) OR (JSON_VALUE(VEC_META, '$.id') = TO_DOUBLE(?))",
+        [1, 2],
     ),
     (
         {"$or": [{"id": 1}, {"name": "bob"}]},
         [1, 2],
+        "WHERE (JSON_VALUE(VEC_META, '$.id') = TO_DOUBLE(?)) OR (JSON_VALUE(VEC_META, '$.name') = ?)",
+        [1, "bob"],
     ),
     (
         {"$and": [{"id": 1}, {"id": 2}]},
         [],
+        "WHERE (JSON_VALUE(VEC_META, '$.id') = TO_DOUBLE(?)) AND (JSON_VALUE(VEC_META, '$.id') = TO_DOUBLE(?))",
+        [1, 2],
     ),
     (
         {"$or": [{"id": 1}, {"id": 2}, {"id": 3}]},
+        [1, 2, 3],
+        "WHERE (JSON_VALUE(VEC_META, '$.id') = TO_DOUBLE(?)) OR (JSON_VALUE(VEC_META, '$.id') = TO_DOUBLE(?)) OR (JSON_VALUE(VEC_META, '$.id') = TO_DOUBLE(?))",
         [1, 2, 3],
     ),
 ]
@@ -194,14 +253,30 @@ TYPE_4_FILTERING_TEST_CASES = [
     (
         {"id": {"$between": (1, 2)}},
         [1, 2],
+        "WHERE JSON_VALUE(VEC_META, '$.id') BETWEEN TO_DOUBLE(?) AND TO_DOUBLE(?)",
+        [1, 2],
     ),
     (
         {"id": {"$between": (1, 1)}},
         [1],
+        "WHERE JSON_VALUE(VEC_META, '$.id') BETWEEN TO_DOUBLE(?) AND TO_DOUBLE(?)",
+        [1, 1],
     ),
     (
         {"name": {"$in": ["adam", "bob"]}},
         [1, 2],
+        "WHERE JSON_VALUE(VEC_META, '$.name') IN (?, ?)",
+        ["adam", "bob"],
+    ),
+]
+
+TYPE_4B_FILTERING_TEST_CASES = [
+    # Test $nin, which is missing in TYPE_4_FILTERING_TEST_CASES
+    (
+        {"name": {"$nin": ["adam", "bob"]}},
+        [3],
+        "WHERE JSON_VALUE(VEC_META, '$.name') NOT IN (?, ?)",
+        ["adam", "bob"],
     ),
 ]
 
@@ -211,9 +286,22 @@ TYPE_5_FILTERING_TEST_CASES = [
     (
         {"name": {"$like": "a%"}},
         [1],
+        "WHERE JSON_VALUE(VEC_META, '$.name') LIKE ?",
+        ["a%"],
     ),
     (
         {"name": {"$like": "%a%"}},  # adam and jane
         [1, 3],
+        "WHERE JSON_VALUE(VEC_META, '$.name') LIKE ?",
+        ["%a%"],
     ),
+]
+
+FILTERING_TEST_CASES = [
+    *TYPE_1_FILTERING_TEST_CASES,
+    *TYPE_2_FILTERING_TEST_CASES,
+    *TYPE_3_FILTERING_TEST_CASES,
+    *TYPE_4_FILTERING_TEST_CASES,
+    *TYPE_4B_FILTERING_TEST_CASES,
+    *TYPE_5_FILTERING_TEST_CASES,
 ]

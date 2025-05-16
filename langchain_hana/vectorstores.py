@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import struct
 from typing import (
@@ -23,7 +24,14 @@ from langchain_core.vectorstores import VectorStore
 from langchain_core.vectorstores.utils import maximal_marginal_relevance
 
 from langchain_hana.embeddings import HanaInternalEmbeddings
+from langchain_hana.query_constructors import (
+    CONTAINS_OPERATOR,
+    LOGICAL_OPERATORS_TO_SQL,
+    CreateWhereClause,
+)
 from langchain_hana.utils import DistanceStrategy
+
+logger = logging.getLogger(__name__)
 
 HANA_DISTANCE_FUNCTION: dict = {
     DistanceStrategy.COSINE: ("COSINE_SIMILARITY", "DESC"),
@@ -31,28 +39,6 @@ HANA_DISTANCE_FUNCTION: dict = {
 }
 
 VECTOR_COLUMN_SQL_TYPES = ["REAL_VECTOR", "HALF_VECTOR"]
-
-COMPARISONS_TO_SQL = {
-    "$eq": "=",
-    "$ne": "<>",
-    "$lt": "<",
-    "$lte": "<=",
-    "$gt": ">",
-    "$gte": ">=",
-}
-
-IN_OPERATORS_TO_SQL = {
-    "$in": "IN",
-    "$nin": "NOT IN",
-}
-
-BETWEEN_OPERATOR = "$between"
-
-LIKE_OPERATOR = "$like"
-
-CONTAINS_OPERATOR = "$contains"
-
-LOGICAL_OPERATORS_TO_SQL = {"$and": "AND", "$or": "OR"}
 
 INTERMEDIATE_TABLE_NAME = "intermediate_result"
 
@@ -226,7 +212,7 @@ class HanaDB(VectorStore):
         Ping the database to check if the in-database embedding function
             exists and works.
         Raises:
-            RuntimeError: If the embedding function does not exist or fails.
+            ValueError: If the embedding function does not exist or fails.
         """
         if self.internal_embedding_model_id is None:
             raise ValueError("Internal embedding model id can't be none!")
@@ -857,16 +843,10 @@ class HanaDB(VectorStore):
             metadata_projection = self._create_metadata_projection(
                 projected_metadata_columns
             )
-
-        from_clause = (
-            INTERMEDIATE_TABLE_NAME if metadata_projection else f'"{self.table_name}"'
-        )
-
-        order_str = f" order by CS {HANA_DISTANCE_FUNCTION[self.distance_strategy][1]}"
-        where_str, query_tuple = self._create_where_by_filter(filter)
-
-        if vector_embedding_params:
-            query_tuple = vector_embedding_params + list(query_tuple)
+        if metadata_projection:
+            from_clause = INTERMEDIATE_TABLE_NAME
+        else:
+            from_clause = f'"{self.table_name}"'
 
         sql_str = (
             f"{metadata_projection} "
@@ -878,11 +858,21 @@ class HanaDB(VectorStore):
             f"  {embedding_expr}) AS CS "  # row[3]
             f"FROM {from_clause}"
         )
-        sql_str = sql_str + where_str
-        sql_str = sql_str + order_str
+        parameters = []
+        if vector_embedding_params:
+            parameters += vector_embedding_params
+        where_clause, where_parameters = CreateWhereClause(self)(filter)
+        if where_clause:
+            sql_str += f" {where_clause}"
+            parameters += where_parameters
+        sql_str += f" order by CS {HANA_DISTANCE_FUNCTION[self.distance_strategy][1]}"
+
         try:
             cur = self.connection.cursor()
-            cur.execute(sql_str, query_tuple)
+            if parameters:
+                cur.execute(sql_str, parameters)
+            else:
+                cur.execute(sql_str)
             if cur.has_result_set():
                 rows = cur.fetchall()
                 for row in rows:
@@ -890,6 +880,10 @@ class HanaDB(VectorStore):
                     doc = Document(page_content=row[0], metadata=js)
                     result_vector = self._deserialize_binary_format(row[2])
                     result.append((doc, row[3], result_vector))
+        except dbapi.Error:
+            logger.error(f"SQL Statement: {sql_str}")
+            logger.error(f"Parameters: {parameters}")
+            raise
         finally:
             cur.close()
         return result
@@ -934,7 +928,7 @@ class HanaDB(VectorStore):
                         or parent_key in self.specific_metadata_columns
                     ):
                         keyword_columns.add(parent_key)
-                elif key in LOGICAL_OPERATORS_TO_SQL.keys():  # Handle logical operators
+                elif key in LOGICAL_OPERATORS_TO_SQL:  # Handle logical operators
                     for subfilter in value:
                         self._recurse_filters(keyword_columns, subfilter)
                 else:
@@ -993,119 +987,6 @@ class HanaDB(VectorStore):
         ]
         return [doc for doc, _ in docs_and_scores]
 
-    def _create_where_by_filter(self, filter):  # type: ignore[no-untyped-def]
-        query_tuple = []
-        where_str = ""
-        if filter:
-            where_str, query_tuple = self._process_filter_object(filter)
-            where_str = " WHERE " + where_str
-        return where_str, query_tuple
-
-    def _process_filter_object(self, filter):  # type: ignore[no-untyped-def]
-        query_tuple = []
-        where_str = ""
-        if filter:
-            for i, key in enumerate(filter.keys()):
-                filter_value = filter[key]
-                if i != 0:
-                    where_str += " AND "
-
-                # Handling of 'special' boolean operators "$and", "$or"
-                if key in LOGICAL_OPERATORS_TO_SQL:
-                    logical_operator = LOGICAL_OPERATORS_TO_SQL[key]
-                    logical_operands = filter_value
-                    for j, logical_operand in enumerate(logical_operands):
-                        if j != 0:
-                            where_str += f" {logical_operator} "
-                        (
-                            where_str_logical,
-                            query_tuple_logical,
-                        ) = self._process_filter_object(logical_operand)
-                        where_str += "(" + where_str_logical + ")"
-                        query_tuple += query_tuple_logical
-                    continue
-
-                operator = "="
-                sql_param = "?"
-
-                if isinstance(filter_value, bool):
-                    query_tuple.append("true" if filter_value else "false")
-                elif isinstance(filter_value, int) or isinstance(filter_value, str):
-                    query_tuple.append(filter_value)
-                elif isinstance(filter_value, dict):
-                    # Handling of 'special' operators starting with "$"
-                    special_op = next(iter(filter_value))
-                    special_val = filter_value[special_op]
-                    # "$eq", "$ne", "$lt", "$lte", "$gt", "$gte"
-                    if special_op in COMPARISONS_TO_SQL:
-                        operator = COMPARISONS_TO_SQL[special_op]
-                        if isinstance(special_val, bool):
-                            query_tuple.append("true" if special_val else "false")
-                        elif isinstance(special_val, float):
-                            sql_param = "CAST(? as float)"
-                            query_tuple.append(special_val)
-                        elif (
-                            isinstance(special_val, dict)
-                            and "type" in special_val
-                            and special_val["type"] == "date"
-                        ):
-                            # Date type
-                            sql_param = "CAST(? as DATE)"
-                            query_tuple.append(special_val["date"])
-                        else:
-                            query_tuple.append(special_val)
-                    # "$between"
-                    elif special_op == BETWEEN_OPERATOR:
-                        between_from = special_val[0]
-                        between_to = special_val[1]
-                        operator = "BETWEEN"
-                        sql_param = "? AND ?"
-                        query_tuple.append(between_from)
-                        query_tuple.append(between_to)
-                    # "$like"
-                    elif special_op == LIKE_OPERATOR:
-                        operator = "LIKE"
-                        query_tuple.append(special_val)
-                    # "$contains"
-                    elif special_op == CONTAINS_OPERATOR:
-                        operator = CONTAINS_OPERATOR
-                        query_tuple.append(special_val)
-                    # "$in", "$nin"
-                    elif special_op in IN_OPERATORS_TO_SQL:
-                        operator = IN_OPERATORS_TO_SQL[special_op]
-                        if isinstance(special_val, list):
-                            for i, list_entry in enumerate(special_val):
-                                if i == 0:
-                                    sql_param = "("
-                                sql_param = sql_param + "?"
-                                if i == (len(special_val) - 1):
-                                    sql_param = sql_param + ")"
-                                else:
-                                    sql_param = sql_param + ","
-                                query_tuple.append(list_entry)
-                        else:
-                            raise ValueError(
-                                f"Unsupported value for {operator}: {special_val}"
-                            )
-                    else:
-                        raise ValueError(f"Unsupported operator: {special_op}")
-                else:
-                    raise ValueError(
-                        f"Unsupported filter data-type: {type(filter_value)}"
-                    )
-
-                if operator == CONTAINS_OPERATOR:
-                    where_str += f"SCORE(? IN (\"{key}\" EXACT SEARCH MODE 'text')) > 0"
-                else:
-                    selector = (
-                        f' "{key}"'
-                        if key in self.specific_metadata_columns
-                        else f"JSON_VALUE({self.metadata_column}, '$.{key}')"
-                    )
-                    where_str += f"{selector} " f"{operator} {sql_param}"
-
-        return where_str, query_tuple
-
     def delete(  # type: ignore[override]
         self, ids: Optional[list[str]] = None, filter: Optional[dict] = None
     ) -> Optional[bool]:
@@ -1127,12 +1008,12 @@ class HanaDB(VectorStore):
         if filter is None:
             raise ValueError("Parameter 'filter' is required when calling 'delete'")
 
-        where_str, query_tuple = self._create_where_by_filter(filter)
-        sql_str = f'DELETE FROM "{self.table_name}" {where_str}'
+        where_clause, parameters = CreateWhereClause(self)(filter)
+        sql_str = f'DELETE FROM "{self.table_name}" {where_clause}'
 
         try:
             cur = self.connection.cursor()
-            cur.execute(sql_str, query_tuple)
+            cur.execute(sql_str, parameters)
         finally:
             cur.close()
 
@@ -1172,7 +1053,7 @@ class HanaDB(VectorStore):
                 res = cur.fetchall()
                 return self._deserialize_binary_format(res[0][0])
             else:
-                raise RuntimeError("No result set returned for query embedding.")
+                raise ValueError("No result set returned for query embedding.")
         finally:
             cur.close()
 
