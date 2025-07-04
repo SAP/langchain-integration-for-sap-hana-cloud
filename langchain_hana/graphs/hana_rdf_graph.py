@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import urllib.parse
 from typing import Optional
 
 import rdflib
@@ -80,7 +81,7 @@ class HanaRdfGraph:
         auto_extract_ontology: bool = False,
     ) -> None:
         self.connection = connection
-        self.graph_uri = graph_uri if graph_uri else "DEFAULT"
+        self.graph_uri = self._sanitize_graph_uri(graph_uri) if graph_uri else "DEFAULT"
 
         self._check_connectivity()
         self.refresh_schema(
@@ -90,6 +91,42 @@ class HanaRdfGraph:
             ontology_local_file_format,
             auto_extract_ontology,
         )
+
+    @staticmethod
+    def _sanitize_graph_uri(graph_uri: Optional[str]) -> str:
+        """
+        Allow either a valid HTTP(S) URI or a simple identifier
+        (alphanumeric, underscore, dash, dot).
+        """
+        if graph_uri is None or graph_uri.upper() == "DEFAULT":
+            return "DEFAULT"
+        parsed = urllib.parse.urlparse(graph_uri)
+        # Accept HTTP(S) URIs
+        if parsed.scheme in ("http", "https") and parsed.netloc:
+            return graph_uri
+        # Accept simple identifiers (e.g., kgdocu_movies, my-graph, graph_1)
+        import re
+        if re.fullmatch(r"[\w.-]+", graph_uri):
+            return graph_uri
+        raise ValueError(
+            f"Invalid graph_uri: {graph_uri}. "
+            f"Must be a valid HTTP(S) URI or a simple identifier.")
+
+    @staticmethod
+    def _sanitize_query(query: str) -> str:
+        """
+        Basic check to prevent dangerous SPARQL commands. Extend as needed.
+        """
+        forbidden = [
+            "DROP GRAPH", "DROP SILENT GRAPH", "CLEAR GRAPH", "DELETE",
+            "INSERT", "LOAD", "CREATE GRAPH", "MOVE GRAPH", "COPY GRAPH",
+            "ADD GRAPH"
+        ]
+        lowered = query.lower()
+        for keyword in forbidden:
+            if keyword.lower() in lowered:
+                raise ValueError(f"Forbidden SPARQL command detected in query: {keyword}")
+        return query
 
     def inject_from_clause(self, query: str) -> str:
         """
@@ -139,6 +176,9 @@ class HanaRdfGraph:
     ) -> str:
         """Executes SPARQL query and returns response as a string."""
 
+        # Sanitize query before execution
+        query = self._sanitize_query(query)
+
         if content_type is None:
             content_type = "application/sparql-results+csv"
 
@@ -185,6 +225,9 @@ class HanaRdfGraph:
         """
         self._validate_construct_query(ontology_query)
 
+        # Sanitize ontology_query
+        ontology_query = self._sanitize_query(ontology_query)
+
         response = self.query(ontology_query, content_type="", inject_from_clause=False)
 
         graph = rdflib.Graph()
@@ -203,6 +246,9 @@ class HanaRdfGraph:
             raise FileNotFoundError(f"File {local_file} does not exist.")
         if not os.access(local_file, os.R_OK):
             raise PermissionError(f"Read permission for {local_file} is restricted")
+        # Prevent directory traversal
+        if os.path.isabs(local_file) and not local_file.startswith(os.getcwd()):
+            raise PermissionError(f"Access to {local_file} is not allowed.")
         graph = rdflib.Graph()
         try:
             graph.parse(local_file, format=local_file_format)
@@ -260,6 +306,7 @@ class HanaRdfGraph:
             )
         else:
             if ontology_uri:
+                ontology_uri = self._sanitize_graph_uri(ontology_uri)
                 ontology_query = (
                     f"CONSTRUCT {{?s ?o ?p}} FROM <{ontology_uri}> WHERE"
                     + "{?s ?o ?p .}"
