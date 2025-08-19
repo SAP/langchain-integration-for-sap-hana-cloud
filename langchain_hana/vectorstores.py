@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 import re
 import struct
+from functools import wraps
 from typing import (
     Any,
     Callable,
@@ -338,6 +340,105 @@ class HanaDB(VectorStore):
         error_message += f"Minimum required instance version: {min_instance_version}"
 
         raise ValueError(error_message)
+
+    def _validate_k(func):
+        # Inspect function signature once at decoration time
+        sig = inspect.signature(func)
+        params = list(sig.parameters.keys())
+
+        if "k" not in params:
+            raise ValueError(f"'k' parameter not found in function {func.__name__}")
+
+        k_index = params.index("k")
+        k_param = sig.parameters["k"]
+        k_default = (
+            k_param.default if k_param.default is not inspect.Parameter.empty else None
+        )
+
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            # Extract k from keyword args if present
+            if "k" in kwargs:
+                k = kwargs["k"]
+            # Else from positional args if present
+            elif len(args) > k_index:
+                k = args[k_index]
+            # Else use default if available
+            elif k_default is not None:
+                k = k_default
+            else:
+                raise ValueError("Parameter 'k' must be provided")
+
+            # Validate k
+            if k <= 0:
+                raise ValueError("Parameter 'k' must be an integer greater than 0")
+
+            # Call the original function with original args and kwargs
+            return func(*args, **kwargs)
+
+        return wrapper
+
+    def _validate_k_and_fetch_k(func):
+        sig = inspect.signature(func)
+        params = list(sig.parameters.keys())
+
+        if "k" not in params:
+            raise ValueError(f"'k' parameter not found in function {func.__name__}")
+        if "fetch_k" not in params:
+            raise ValueError(
+                f"'fetch_k' parameter not found in function {func.__name__}"
+            )
+
+        k_index = params.index("k")
+        fetch_k_index = params.index("fetch_k")
+
+        k_param = sig.parameters["k"]
+        fetch_k_param = sig.parameters["fetch_k"]
+
+        k_default = (
+            k_param.default if k_param.default is not inspect.Parameter.empty else None
+        )
+        fetch_k_default = (
+            fetch_k_param.default
+            if fetch_k_param.default is not inspect.Parameter.empty
+            else None
+        )
+
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            # Extract k
+            if "k" in kwargs:
+                k = kwargs["k"]
+            elif len(args) > k_index:
+                k = args[k_index]
+            elif k_default is not None:
+                k = k_default
+            else:
+                raise ValueError("Parameter 'k' must be provided")
+
+            # Extract fetch_k
+            if "fetch_k" in kwargs:
+                fetch_k = kwargs["fetch_k"]
+            elif len(args) > fetch_k_index:
+                fetch_k = args[fetch_k_index]
+            elif fetch_k_default is not None:
+                fetch_k = fetch_k_default
+            else:
+                raise ValueError("Parameter 'fetch_k' must be provided")
+
+            # Validate k
+            if not isinstance(k, int) or k <= 0:
+                raise ValueError("Parameter 'k' must be an integer greater than 0")
+
+            # Validate fetch_k
+            if fetch_k < k:
+                raise ValueError(
+                    "Parameter 'fetch_k' must be an integer greater than or equal to 'k'"
+                )
+
+            return func(*args, **kwargs)
+
+        return wrapper
 
     def _serialize_binary_format(self, values: list[float]) -> bytes:
         # Converts a list of floats into binary format
@@ -686,6 +787,7 @@ class HanaDB(VectorStore):
         instance.add_texts(texts, metadatas)
         return instance
 
+    @_validate_k
     def similarity_search(  # type: ignore[override]
         self, query: str, k: int = 4, filter: Optional[dict] = None
     ) -> list[Document]:
@@ -833,7 +935,6 @@ class HanaDB(VectorStore):
             - list[float]: The document's embedding vector
         """
         result = []
-        k = HanaDB._sanitize_int(k)
         distance_func_name = HANA_DISTANCE_FUNCTION[self.distance_strategy][0]
 
         # Generate metadata projection for filtered results
@@ -965,6 +1066,7 @@ class HanaDB(VectorStore):
             f"FROM \"{self.table_name}\")"
         )
 
+    @_validate_k
     def similarity_search_by_vector(  # type: ignore[override]
         self, embedding: list[float], k: int = 4, filter: Optional[dict] = None
     ) -> list[Document]:
@@ -1057,6 +1159,7 @@ class HanaDB(VectorStore):
         finally:
             cur.close()
 
+    @_validate_k_and_fetch_k
     def max_marginal_relevance_search(  # type: ignore[override]
         self,
         query: str,
@@ -1103,6 +1206,7 @@ class HanaDB(VectorStore):
         array_wo_brackets = array_as_string[1:-1]
         return [float(x) for x in array_wo_brackets.split(",")]
 
+    @_validate_k_and_fetch_k
     def max_marginal_relevance_search_by_vector(  # type: ignore[override]
         self,
         embedding: list[float],
