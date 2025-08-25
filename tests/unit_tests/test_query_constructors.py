@@ -15,10 +15,12 @@ from tests.integration_tests.fixtures.filtering_test_cases import FILTERING_TEST
 
 DEFAULT_TRANSLATOR = HanaTranslator()
 
+
 class MockHanaDb:
     def __init__(self):
         self.metadata_column = default_metadata_column
         self.specific_metadata_columns = []
+
 
 def test_visit_comparison() -> None:
     comp = Comparison(comparator=Comparator.LT, attribute="foo", value=1)
@@ -89,6 +91,7 @@ def test_visit_structured_query() -> None:
     actual = DEFAULT_TRANSLATOR.visit_structured_query(structured_query)
     assert expected == actual
 
+
 def test_create_where_clause_empty_filter() -> None:
     where_clause, parameters = CreateWhereClause(MockHanaDb())({})
     assert where_clause == ""
@@ -106,7 +109,11 @@ def test_create_where_clause_unsupported_filter_value_type() -> None:
     with pytest.raises(ValueError, match="Unsupported filter value type"):
         CreateWhereClause(MockHanaDb())(unsupported_filter)
 
-@pytest.mark.parametrize("test_filter, expected_ids, expected_where_clause, expected_where_clause_parameters", FILTERING_TEST_CASES)
+
+@pytest.mark.parametrize(
+    "test_filter, expected_ids, expected_where_clause, expected_where_clause_parameters",
+    FILTERING_TEST_CASES,
+)
 def test_create_where_clause(
     test_filter: Dict[str, Any],
     expected_ids: List[int],

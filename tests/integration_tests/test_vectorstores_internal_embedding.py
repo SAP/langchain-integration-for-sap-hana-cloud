@@ -81,6 +81,17 @@ def teardown_module(module):  # type: ignore[no-untyped-def]
     HanaTestUtils.drop_schema_if_exists(test_setup.conn, test_setup.schema_name)
 
 
+def _drop_table(table_name):
+    """Drop Table with the given table name if possible"""
+    cur = test_setup.conn.cursor()
+    try:
+        cur.execute(f"DROP TABLE {table_name}")
+    except dbapi.Error as e:
+        raise RuntimeError(f"Error dropping table {table_name}: {e}")
+    finally:
+        cur.close()
+
+
 @pytest.fixture
 def texts() -> list[str]:
     return ["foo", "bar", "baz", "bak", "cat"]
@@ -97,15 +108,58 @@ def metadatas() -> list[str]:
     ]
 
 
-def test_hanavector_add_texts(texts: list[str], metadatas: list[dict]) -> None:
-    table_name = "TEST_TABLE_ADD_TEXTS"
-
-    # Check if table is created
-    vectordb = HanaDB(
-        connection=test_setup.conn, embedding=embedding, table_name=table_name
+@pytest.fixture
+def vectorDB_empty():
+    table_name = "TEST_TABLE_EMPTY"
+    vectorDB = HanaDB(
+        connection=test_setup.conn,
+        embedding=embedding,
+        table_name=table_name,
     )
 
-    vectordb.add_texts(texts=texts, metadatas=metadatas)
+    yield vectorDB
+
+    _drop_table(table_name)
+
+
+@pytest.fixture
+def vectorDB_with_texts(texts):
+    table_name = "TEST_TABLE_WITH_TEXTS"
+    vectorDB = HanaDB.from_texts(
+        connection=test_setup.conn,
+        embedding=embedding,
+        texts=texts,
+        table_name=table_name,
+    )
+
+    yield vectorDB
+
+    _drop_table(table_name)
+
+
+@pytest.fixture
+def vectorDB_with_texts_and_metadatas(texts, metadatas):
+    table_name = "TEST_TABLE_WITH_TEXTS_AND_METADATAS"
+
+    vectorDB = HanaDB.from_texts(
+        connection=test_setup.conn,
+        embedding=embedding,
+        texts=texts,
+        metadatas=metadatas,
+        table_name=table_name,
+    )
+
+    yield vectorDB
+
+    _drop_table(table_name)
+
+
+def test_hanavector_add_texts(
+    texts: list[str], metadatas: list[dict], vectorDB_empty
+) -> None:
+    table_name = "TEST_TABLE_EMPTY"
+
+    vectorDB_empty.add_texts(texts=texts, metadatas=metadatas)
 
     # check that embeddings have been created in the table
     number_of_texts = len(texts)
@@ -120,32 +174,23 @@ def test_hanavector_add_texts(texts: list[str], metadatas: list[dict]) -> None:
 
 
 def test_hanavector_similarity_search_with_metadata_filter(
-    texts: list[str], metadatas: list[dict]
+    texts: list[str], metadatas: list[dict], vectorDB_with_texts_and_metadatas
 ) -> None:
-    table_name = "TEST_TABLE_FILTER"
-
-    # Check if table is created
-    vectorDB = HanaDB.from_texts(
-        connection=test_setup.conn,
-        texts=texts,
-        metadatas=metadatas,
-        embedding=embedding,
-        table_name=table_name,
+    search_result = vectorDB_with_texts_and_metadatas.similarity_search(
+        texts[0], 3, filter={"start": 100}
     )
-
-    search_result = vectorDB.similarity_search(texts[0], 3, filter={"start": 100})
 
     assert len(search_result) == 1
     assert texts[1] == search_result[0].page_content
     assert metadatas[1]["start"] == search_result[0].metadata["start"]
     assert metadatas[1]["end"] == search_result[0].metadata["end"]
 
-    search_result = vectorDB.similarity_search(
+    search_result = vectorDB_with_texts_and_metadatas.similarity_search(
         texts[0], 3, filter={"start": 100, "end": 150}
     )
     assert len(search_result) == 0
 
-    search_result = vectorDB.similarity_search(
+    search_result = vectorDB_with_texts_and_metadatas.similarity_search(
         texts[0], 3, filter={"start": 100, "end": 200}
     )
     assert len(search_result) == 1
@@ -155,33 +200,18 @@ def test_hanavector_similarity_search_with_metadata_filter(
 
 
 @pytest.mark.parametrize("k", [0, -4])
-def test_hanavector_similarity_search_simple_invalid(texts: list[str], k: int) -> None:
-    table_name = "TEST_TABLE_SEARCH_SIMPLE_INVALID"
-
-    # Check if table is created
-    vectorDB = HanaDB.from_texts(
-        connection=test_setup.conn,
-        texts=texts,
-        embedding=embedding,
-        table_name=table_name,
-    )
+def test_hanavector_similarity_search_simple_invalid(vectorDB, k: int) -> None:
 
     with pytest.raises(ValueError, match="must be an integer greater than 0"):
         vectorDB.similarity_search(texts[0], k)
 
 
-def test_hanavector_max_marginal_relevance_search(texts: list[str]) -> None:
-    table_name = "TEST_TABLE_MAX_RELEVANCE"
-
-    # Check if table is created
-    vectorDB = HanaDB.from_texts(
-        connection=test_setup.conn,
-        texts=texts,
-        embedding=embedding,
-        table_name=table_name,
+def test_hanavector_max_marginal_relevance_search(
+    texts: list[str], vectorDB_with_texts
+) -> None:
+    search_result = vectorDB_with_texts.max_marginal_relevance_search(
+        texts[0], k=2, fetch_k=20
     )
-
-    search_result = vectorDB.max_marginal_relevance_search(texts[0], k=2, fetch_k=20)
 
     assert len(search_result) == 2
     assert search_result[0].page_content == texts[0]
@@ -197,17 +227,8 @@ def test_hanavector_max_marginal_relevance_search(texts: list[str]) -> None:
     ],
 )
 def test_hanavector_max_marginal_relevance_search_invalid(
-    texts: list[str], k: int, fetch_k: int, error_msg: str
+    vectorDB, k: int, fetch_k: int, error_msg: str
 ) -> None:
-    table_name = "TEST_TABLE_MAX_RELEVANCE_INVALID"
-
-    # Check if table is created
-    vectorDB = HanaDB.from_texts(
-        connection=test_setup.conn,
-        texts=texts,
-        embedding=embedding,
-        table_name=table_name,
-    )
 
     with pytest.raises(ValueError, match=error_msg):
         vectorDB.max_marginal_relevance_search(texts[0], k, fetch_k)
@@ -222,17 +243,8 @@ def test_hanavector_max_marginal_relevance_search_invalid(
     ],
 )
 async def test_hanavector_max_marginal_relevance_search_async_invalid(
-    texts: list[str], k: int, fetch_k: int, error_msg: str
+    vectorDB, k: int, fetch_k: int, error_msg: str
 ) -> None:
-    table_name = "TEST_TABLE_MAX_RELEVANCE_ASYNC_INVALID"
-
-    # Check if table is created
-    vectorDB = HanaDB.from_texts(
-        connection=test_setup.conn,
-        texts=texts,
-        embedding=embedding,
-        table_name=table_name,
-    )
 
     with pytest.raises(ValueError, match=error_msg):
         await vectorDB.amax_marginal_relevance_search(texts[0], k, fetch_k)
