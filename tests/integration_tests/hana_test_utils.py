@@ -2,8 +2,19 @@
 
 from datetime import datetime, timedelta
 
+from hdbcli import dbapi
+
 
 class HanaTestUtils:
+    TEXTS = ["foo", "bar", "baz", "bak", "cat"]
+    METADATAS = [
+        {"start": 0, "end": 100, "quality": "good", "ready": True},  # type: ignore[list-item]
+        {"start": 100, "end": 200, "quality": "bad", "ready": False},  # type: ignore[list-item]
+        {"start": 200, "end": 300, "quality": "ugly", "ready": True},  # type: ignore[list-item]
+        {"start": 200, "quality": "ugly", "ready": True, "Owner": "Steve"},  # type: ignore[list-item]
+        {"start": 300, "quality": "ugly", "Owner": "Steve"},  # type: ignore[list-item]
+    ]
+
     @staticmethod
     def execute_sql(conn, statement, parameters=None, return_result=False):
         assert conn, "Connection cannot be None"
@@ -48,8 +59,7 @@ class HanaTestUtils:
                     conn, f'DROP SCHEMA "{row["SCHEMA_NAME"]}" CASCADE'
                 )
         except Exception as ex:
-            print(f"Unable to drop old test schemas. Error: {ex}")
-            pass
+            raise RuntimeError(f"Unable to drop old test schemas. Error: {ex}")
         finally:
             cursor.close()
 
@@ -67,3 +77,13 @@ class HanaTestUtils:
         # HanaTestUtils.dropSchemaIfExists(conn, schema_name)
         HanaTestUtils.execute_sql(conn, f'CREATE SCHEMA "{schema_name}"')
         HanaTestUtils.execute_sql(conn, f'SET SCHEMA "{schema_name}"')
+
+    @staticmethod
+    def drop_table(conn, table_name):
+        cur = conn.cursor()
+        try:
+            cur.execute(f"DROP TABLE {table_name}")
+        except dbapi.Error as e:
+            raise RuntimeError(f"Error dropping table {table_name}: {e}")
+        finally:
+            cur.close()
