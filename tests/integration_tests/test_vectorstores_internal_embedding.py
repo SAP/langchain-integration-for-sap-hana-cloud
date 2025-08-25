@@ -79,33 +79,6 @@ def teardown_module(module):  # type: ignore[no-untyped-def]
     HanaTestUtils.drop_schema_if_exists(config.conn, config.schema_name)
 
 
-# def HanaUtils.drop_table(table_name):
-#     """Drop Table with the given table name if possible"""
-#     cur = config.conn.cursor()
-#     try:
-#         cur.execute(f"DROP TABLE {table_name}")
-#     except dbapi.Error as e:
-#         raise RuntimeError(f"Error dropping table {table_name}: {e}")
-#     finally:
-#         cur.close()
-
-
-# @pytest.fixture
-# def HanaTestUtils.TEXTS() -> list[str]:
-#     return ["foo", "bar", "baz", "bak", "cat"]
-
-
-# @pytest.fixture
-# def HanaTestUtils.METADATAS() -> list[str]:
-#     return [
-#         {"start": 0, "end": 100, "quality": "good", "ready": True},  # type: ignore[list-item]
-#         {"start": 100, "end": 200, "quality": "bad", "ready": False},  # type: ignore[list-item]
-#         {"start": 200, "end": 300, "quality": "ugly", "ready": True},  # type: ignore[list-item]
-#         {"start": 200, "quality": "ugly", "ready": True, "Owner": "Steve"},  # type: ignore[list-item]
-#         {"start": 300, "quality": "ugly", "Owner": "Steve"},  # type: ignore[list-item]
-#     ]
-
-
 @pytest.fixture
 def vectorDB_empty():
     table_name = "TEST_TABLE_EMPTY"
