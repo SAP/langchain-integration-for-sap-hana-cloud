@@ -687,7 +687,6 @@ class HanaDB(VectorStore):
         instance.add_texts(texts, metadatas)
         return instance
 
-
     def similarity_search(  # type: ignore[override]
         self, query: str, k: int = 4, filter: Optional[dict] = None
     ) -> list[Document]:
