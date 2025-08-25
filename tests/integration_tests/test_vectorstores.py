@@ -289,8 +289,9 @@ def test_hanavector_similarity_search_simple(texts: List[str]) -> None:
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_similarity_search_simple_invalid_k_zero(texts: list[str]) -> None:
-    table_name = "TEST_TABLE_SEARCH_SIMPLE"
+@pytest.mark.parametrize("k", [0, -4])
+def test_hanavector_similarity_search_simple_invalid(texts: list[str], k: int) -> None:
+    table_name = "TEST_TABLE_SEARCH_SIMPLE_INVALID"
 
     # Check if table is created
     vectorDB = HanaDB.from_texts(
@@ -301,25 +302,7 @@ def test_hanavector_similarity_search_simple_invalid_k_zero(texts: list[str]) ->
     )
 
     with pytest.raises(ValueError, match="must be an integer greater than 0"):
-        vectorDB.similarity_search(texts[0], 0)
-
-
-@pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_similarity_search_simple_invalid_k_negative(
-    texts: list[str],
-) -> None:
-    table_name = "TEST_TABLE_SEARCH_SIMPLE"
-
-    # Check if table is created
-    vectorDB = HanaDB.from_texts(
-        connection=test_setup.conn,
-        texts=texts,
-        embedding=embedding,
-        table_name=table_name,
-    )
-
-    with pytest.raises(ValueError, match="must be an integer greater than 0"):
-        vectorDB.similarity_search(texts[0], -4)
+        vectorDB.similarity_search(texts[0], k)
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
@@ -339,10 +322,9 @@ def test_hanavector_similarity_search_by_vector_simple(texts: List[str]) -> None
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_similarity_search_by_vector_simple_invalid_k_zero(
-    texts: list[str],
-) -> None:
-    table_name = "TEST_TABLE_SEARCH_SIMPLE"
+@pytest.mark.parametrize("k", [0, -4])
+def test_hanavector_similarity_search_by_vector_simple_invalid(texts: list[str], k: int) -> None:
+    table_name = "TEST_TABLE_SEARCH_SIMPLE_VECTOR_INVALID"
 
     # Check if table is created
     vectorDB = HanaDB.from_texts(
@@ -352,27 +334,8 @@ def test_hanavector_similarity_search_by_vector_simple_invalid_k_zero(
         table_name=table_name,
     )
 
-    vector = embedding.embed_query(texts[0])
     with pytest.raises(ValueError, match="must be an integer greater than 0"):
-        vectorDB.similarity_search_by_vector(vector, 0)
-
-
-@pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_similarity_search_by_vector_simple_invalid_k_negative(
-    texts: list[str],
-) -> None:
-    table_name = "TEST_TABLE_SEARCH_SIMPLE"
-
-    # Check if table is created
-    vectorDB = HanaDB.from_texts(
-        connection=test_setup.conn,
-        texts=texts,
-        embedding=embedding,
-        table_name=table_name,
-    )
-    vector = embedding.embed_query(texts[0])
-    with pytest.raises(ValueError, match="must be an integer greater than 0"):
-        vectorDB.similarity_search_by_vector(vector, -4)
+        vectorDB.similarity_search_by_vector(texts[0], k)
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
@@ -738,10 +701,11 @@ def test_hanavector_max_marginal_relevance_search(texts: List[str]) -> None:
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_max_marginal_relevance_search_invalid_k_zero(
-    texts: list[str],
+@pytest.mark.parametrize("k, fetch_k, error_msg", [(0, 20, "must be an integer greater than 0"), (-4, 20, "must be an integer greater than 0"), (2, 0, "greater than or equal to 'k'")])
+def test_hanavector_max_marginal_relevance_search_invalid(
+    texts: list[str], k: int, fetch_k: int, error_msg: str
 ) -> None:
-    table_name = "TEST_TABLE_SEARCH_SIMPLE"
+    table_name = "TEST_TABLE_MAX_RELEVANCE_INVALID"
 
     # Check if table is created
     vectorDB = HanaDB.from_texts(
@@ -751,44 +715,8 @@ def test_hanavector_max_marginal_relevance_search_invalid_k_zero(
         table_name=table_name,
     )
 
-    with pytest.raises(ValueError, match="must be an integer greater than 0"):
-        vectorDB.max_marginal_relevance_search(texts[0], 0, 20)
-
-
-@pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_max_marginal_relevance_search_invalid_k_negative(
-    texts: list[str],
-) -> None:
-    table_name = "TEST_TABLE_SEARCH_SIMPLE"
-
-    # Check if table is created
-    vectorDB = HanaDB.from_texts(
-        connection=test_setup.conn,
-        texts=texts,
-        embedding=embedding,
-        table_name=table_name,
-    )
-
-    with pytest.raises(ValueError, match="must be an integer greater than 0"):
-        vectorDB.max_marginal_relevance_search(texts[0], -5, 20)
-
-
-@pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_max_marginal_relevance_search_invalid_fetch_k_less_than_k(
-    texts: list[str],
-) -> None:
-    table_name = "TEST_TABLE_SEARCH_SIMPLE"
-
-    # Check if table is created
-    vectorDB = HanaDB.from_texts(
-        connection=test_setup.conn,
-        texts=texts,
-        embedding=embedding,
-        table_name=table_name,
-    )
-
-    with pytest.raises(ValueError, match="greater than or equal to 'k'"):
-        vectorDB.max_marginal_relevance_search(texts[0], 5, 1)
+    with pytest.raises(ValueError, match=error_msg):
+        vectorDB.max_marginal_relevance_search(texts[0], k, fetch_k)
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
@@ -834,10 +762,11 @@ async def test_hanavector_max_marginal_relevance_search_async(texts: List[str]) 
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-async def test_hanavector_max_marginal_relevance_search_async_invalid_k_zero(
-    texts: list[str],
+@pytest.mark.parametrize("k, fetch_k, error_msg", [(0, 20, "must be an integer greater than 0"), (-4, 20, "must be an integer greater than 0"), (2, 0, "greater than or equal to 'k'")])
+async def test_hanavector_max_marginal_relevance_search_async_invalid(
+    texts: list[str], k: int, fetch_k: int, error_msg: str
 ) -> None:
-    table_name = "TEST_TABLE_SEARCH_SIMPLE"
+    table_name = "TEST_TABLE_MAX_RELEVANCE_INVALID"
 
     # Check if table is created
     vectorDB = HanaDB.from_texts(
@@ -847,44 +776,8 @@ async def test_hanavector_max_marginal_relevance_search_async_invalid_k_zero(
         table_name=table_name,
     )
 
-    with pytest.raises(ValueError, match="must be an integer greater than 0"):
-        await vectorDB.amax_marginal_relevance_search(texts[0], 0, 20)
-
-
-@pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-async def test_hanavector_max_marginal_relevance_search_async_invalid_k_negative(
-    texts: list[str],
-) -> None:
-    table_name = "TEST_TABLE_SEARCH_SIMPLE"
-
-    # Check if table is created
-    vectorDB = HanaDB.from_texts(
-        connection=test_setup.conn,
-        texts=texts,
-        embedding=embedding,
-        table_name=table_name,
-    )
-
-    with pytest.raises(ValueError, match="must be an integer greater than 0"):
-        await vectorDB.amax_marginal_relevance_search(texts[0], -5, 20)
-
-
-@pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-async def test_hanavector_max_marginal_relevance_search_async_invalid_fetch_k_less_than_k(
-    texts: list[str],
-) -> None:
-    table_name = "TEST_TABLE_SEARCH_SIMPLE"
-
-    # Check if table is created
-    vectorDB = HanaDB.from_texts(
-        connection=test_setup.conn,
-        texts=texts,
-        embedding=embedding,
-        table_name=table_name,
-    )
-
-    with pytest.raises(ValueError, match="greater than or equal to 'k'"):
-        await vectorDB.amax_marginal_relevance_search(texts[0], 5, 1)
+    with pytest.raises(ValueError, match=error_msg):
+        await vectorDB.amax_marginal_relevance_search(texts[0], k, fetch_k)
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")

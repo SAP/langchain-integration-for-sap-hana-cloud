@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import inspect
 import json
 import logging
 import re
@@ -31,7 +30,7 @@ from langchain_hana.query_constructors import (
     LOGICAL_OPERATORS_TO_SQL,
     CreateWhereClause,
 )
-from langchain_hana.utils import DistanceStrategy
+from langchain_hana.utils import DistanceStrategy, _validate_k, _validate_k_and_fetch_k
 
 logger = logging.getLogger(__name__)
 
@@ -340,79 +339,6 @@ class HanaDB(VectorStore):
         error_message += f"Minimum required instance version: {min_instance_version}"
 
         raise ValueError(error_message)
-
-    @staticmethod
-    def _get_param_value(param_key: str, sig, params, *args, **kwargs):
-        if param_key in kwargs:
-                param_val = kwargs[param_key]
-        else:
-            param_index = params.index(param_key)
-            if param_index < len(args):
-                param_val = args[param_index]
-            else:
-                param_obj = sig.parameters[param_key]
-                if param_obj.default is not inspect.Parameter.empty :
-                    param_val = param_obj.default
-                else :
-                    raise ValueError("Parameter 'k' must be provided")
-        
-        return param_val
-
-    @staticmethod
-    def _validate_k(func):
-        
-        sig = inspect.signature(func)
-        params = list(sig.parameters.keys())
-
-        if "k" not in params:
-            raise ValueError(f"'k' parameter not found in function {func.__name__}")
-
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            # Get parameter value
-            k = HanaDB._get_param_value("k", sig, params, *args, **kwargs)
-
-            # Validate k
-            if not isinstance(k,int) or k <= 0:
-                raise ValueError("Parameter 'k' must be an integer greater than 0")
-
-            # Call the original function with original args and kwargs
-            return func(*args, **kwargs)
-
-        return wrapper
-
-    @staticmethod
-    def _validate_k_and_fetch_k(func):
-        
-        sig = inspect.signature(func)
-        params = list(sig.parameters.keys())
-
-        if "k" not in params:
-            raise ValueError(f"'k' parameter not found in function {func.__name__}")
-        
-        if "fetch_k" not in params:
-            raise ValueError(f"'fetch_k' parameter not found in function {func.__name__}")
-
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-
-            # Extract k and fetch_k
-            k = HanaDB._get_param_value("k", sig, params, *args, **kwargs)
-            fetch_k = HanaDB._get_param_value("fetch_k", sig, params, *args, **kwargs)
-
-            # Validate k
-            if not isinstance(k, int) or k <= 0:
-                raise ValueError("Parameter 'k' must be an integer greater than 0")
-
-            # Validate fetch_k
-            if not isinstance(fetch_k, int) or fetch_k < k:
-                raise ValueError(
-                    "Parameter 'fetch_k' must be an integer greater than or equal to 'k'"
-                )
-
-            return func(*args, **kwargs)
-
-        return wrapper
 
     def _serialize_binary_format(self, values: list[float]) -> bytes:
         # Converts a list of floats into binary format
@@ -881,11 +807,10 @@ class HanaDB(VectorStore):
             filter=filter,
         )
 
-    @_validate_k
     def _similarity_search_with_score_and_vector(
         self,
         embedding_expr: str,
-        k: int = 4,
+        k: int,
         filter: Optional[dict] = None,
         vector_embedding_params: Optional[list[str]] = None,
     ) -> list[tuple[Document, float, list[float]]]:
@@ -909,6 +834,9 @@ class HanaDB(VectorStore):
             - float: The similarity score
             - list[float]: The document's embedding vector
         """
+
+        _validate_k(k)
+
         result = []
         distance_func_name = HANA_DISTANCE_FUNCTION[self.distance_strategy][0]
 
@@ -1179,7 +1107,7 @@ class HanaDB(VectorStore):
         array_wo_brackets = array_as_string[1:-1]
         return [float(x) for x in array_wo_brackets.split(",")]
 
-    @_validate_k_and_fetch_k
+    
     def max_marginal_relevance_search_by_vector(  # type: ignore[override]
         self,
         embedding: list[float],
@@ -1188,6 +1116,9 @@ class HanaDB(VectorStore):
         lambda_mult: float = 0.5,
         filter: Optional[dict] = None,
     ) -> list[Document]:
+
+        _validate_k_and_fetch_k(k, fetch_k)
+
         whole_result = self.similarity_search_with_score_and_vector_by_vector(
             embedding=embedding, k=fetch_k, filter=filter
         )

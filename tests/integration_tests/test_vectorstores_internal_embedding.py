@@ -153,8 +153,9 @@ def test_hanavector_similarity_search_with_metadata_filter(
     assert metadatas[1]["end"] == search_result[0].metadata["end"]
 
 
-def test_hanavector_similarity_search_simple_invalid_k_zero(texts: list[str]) -> None:
-    table_name = "TEST_TABLE_SEARCH_SIMPLE"
+@pytest.mark.parametrize("k", [0, -4])
+def test_hanavector_similarity_search_simple_invalid(texts: list[str], k: int) -> None:
+    table_name = "TEST_TABLE_SEARCH_SIMPLE_INVALID"
 
     # Check if table is created
     vectorDB = HanaDB.from_texts(
@@ -165,24 +166,8 @@ def test_hanavector_similarity_search_simple_invalid_k_zero(texts: list[str]) ->
     )
 
     with pytest.raises(ValueError, match="must be an integer greater than 0"):
-        vectorDB.similarity_search(texts[0], 0)
+        vectorDB.similarity_search(texts[0], k)       
 
-
-def test_hanavector_similarity_search_simple_invalid_k_negative(
-    texts: list[str],
-) -> None:
-    table_name = "TEST_TABLE_SEARCH_SIMPLE"
-
-    # Check if table is created
-    vectorDB = HanaDB.from_texts(
-        connection=test_setup.conn,
-        texts=texts,
-        embedding=embedding,
-        table_name=table_name,
-    )
-
-    with pytest.raises(ValueError, match="must be an integer greater than 0"):
-        vectorDB.similarity_search(texts[0], -4)
 
 def test_hanavector_max_marginal_relevance_search(texts: list[str]) -> None:
     table_name = "TEST_TABLE_MAX_RELEVANCE"
@@ -202,10 +187,11 @@ def test_hanavector_max_marginal_relevance_search(texts: list[str]) -> None:
     assert search_result[1].page_content != texts[0]
 
 
-def test_hanavector_max_marginal_relevance_search_invalid_k_zero(
-    texts: list[str],
+@pytest.mark.parametrize("k, fetch_k, error_msg", [(0, 20, "must be an integer greater than 0"), (-4, 20, "must be an integer greater than 0"), (2, 0, "greater than or equal to 'k'")])
+def test_hanavector_max_marginal_relevance_search_invalid(
+    texts: list[str], k: int, fetch_k: int, error_msg: str
 ) -> None:
-    table_name = "TEST_TABLE_SEARCH_SIMPLE"
+    table_name = "TEST_TABLE_MAX_RELEVANCE_INVALID"
 
     # Check if table is created
     vectorDB = HanaDB.from_texts(
@@ -215,14 +201,15 @@ def test_hanavector_max_marginal_relevance_search_invalid_k_zero(
         table_name=table_name,
     )
 
-    with pytest.raises(ValueError, match="must be an integer greater than 0"):
-        vectorDB.max_marginal_relevance_search(texts[0], 0, 20)
+    with pytest.raises(ValueError, match=error_msg):
+        vectorDB.max_marginal_relevance_search(texts[0], k, fetch_k)
 
 
-def test_hanavector_max_marginal_relevance_search_invalid_k_negative(
-    texts: list[str],
+@pytest.mark.parametrize("k, fetch_k, error_msg", [(0, 20, "must be an integer greater than 0"), (-4, 20, "must be an integer greater than 0"), (2, 0, "greater than or equal to 'k'")])
+async def test_hanavector_max_marginal_relevance_search_async_invalid(
+    texts: list[str], k: int, fetch_k: int, error_msg: str
 ) -> None:
-    table_name = "TEST_TABLE_SEARCH_SIMPLE"
+    table_name = "TEST_TABLE_MAX_RELEVANCE_ASYNC_INVALID"
 
     # Check if table is created
     vectorDB = HanaDB.from_texts(
@@ -232,73 +219,5 @@ def test_hanavector_max_marginal_relevance_search_invalid_k_negative(
         table_name=table_name,
     )
 
-    with pytest.raises(ValueError, match="must be an integer greater than 0"):
-        vectorDB.max_marginal_relevance_search(texts[0], -5, 20)
-
-
-def test_hanavector_max_marginal_relevance_search_invalid_fetch_k_less_than_k(
-    texts: list[str],
-) -> None:
-    table_name = "TEST_TABLE_SEARCH_SIMPLE"
-
-    # Check if table is created
-    vectorDB = HanaDB.from_texts(
-        connection=test_setup.conn,
-        texts=texts,
-        embedding=embedding,
-        table_name=table_name,
-    )
-
-    with pytest.raises(ValueError, match="greater than or equal to 'k'"):
-        vectorDB.max_marginal_relevance_search(texts[0], 5, 1)
-
-
-async def test_hanavector_max_marginal_relevance_search_async_invalid_k_zero(
-    texts: list[str],
-) -> None:
-    table_name = "TEST_TABLE_SEARCH_SIMPLE"
-
-    # Check if table is created
-    vectorDB = HanaDB.from_texts(
-        connection=test_setup.conn,
-        texts=texts,
-        embedding=embedding,
-        table_name=table_name,
-    )
-
-    with pytest.raises(ValueError, match="must be an integer greater than 0"):
-        await vectorDB.amax_marginal_relevance_search(texts[0], 0, 20)
-
-
-async def test_hanavector_max_marginal_relevance_search_async_invalid_k_negative(
-    texts: list[str],
-) -> None:
-    table_name = "TEST_TABLE_SEARCH_SIMPLE"
-
-    # Check if table is created
-    vectorDB = HanaDB.from_texts(
-        connection=test_setup.conn,
-        texts=texts,
-        embedding=embedding,
-        table_name=table_name,
-    )
-
-    with pytest.raises(ValueError, match="must be an integer greater than 0"):
-        await vectorDB.amax_marginal_relevance_search(texts[0], -5, 20)
-
-
-async def test_hanavector_max_marginal_relevance_search_async_invalid_fetch_k_less_than_k(
-    texts: list[str],
-) -> None:
-    table_name = "TEST_TABLE_SEARCH_SIMPLE"
-
-    # Check if table is created
-    vectorDB = HanaDB.from_texts(
-        connection=test_setup.conn,
-        texts=texts,
-        embedding=embedding,
-        table_name=table_name,
-    )
-
-    with pytest.raises(ValueError, match="greater than or equal to 'k'"):
-        await vectorDB.amax_marginal_relevance_search(texts[0], 5, 1)
+    with pytest.raises(ValueError, match=error_msg):
+        await vectorDB.amax_marginal_relevance_search(texts[0], k, fetch_k)
