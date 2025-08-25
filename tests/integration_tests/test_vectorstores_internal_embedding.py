@@ -20,6 +20,7 @@ test_setup = ConfigData()
 
 embedding = None
 
+
 def is_internal_embedding_available(connection, embedding) -> bool:
     """
     Check if the internal embedding function is available in HANA DB.
@@ -166,7 +167,7 @@ def test_hanavector_similarity_search_simple_invalid(texts: list[str], k: int) -
     )
 
     with pytest.raises(ValueError, match="must be an integer greater than 0"):
-        vectorDB.similarity_search(texts[0], k)       
+        vectorDB.similarity_search(texts[0], k)
 
 
 def test_hanavector_max_marginal_relevance_search(texts: list[str]) -> None:
@@ -187,7 +188,14 @@ def test_hanavector_max_marginal_relevance_search(texts: list[str]) -> None:
     assert search_result[1].page_content != texts[0]
 
 
-@pytest.mark.parametrize("k, fetch_k, error_msg", [(0, 20, "must be an integer greater than 0"), (-4, 20, "must be an integer greater than 0"), (2, 0, "greater than or equal to 'k'")])
+@pytest.mark.parametrize(
+    "k, fetch_k, error_msg",
+    [
+        (0, 20, "must be an integer greater than 0"),
+        (-4, 20, "must be an integer greater than 0"),
+        (2, 0, "greater than or equal to 'k'"),
+    ],
+)
 def test_hanavector_max_marginal_relevance_search_invalid(
     texts: list[str], k: int, fetch_k: int, error_msg: str
 ) -> None:
@@ -205,7 +213,14 @@ def test_hanavector_max_marginal_relevance_search_invalid(
         vectorDB.max_marginal_relevance_search(texts[0], k, fetch_k)
 
 
-@pytest.mark.parametrize("k, fetch_k, error_msg", [(0, 20, "must be an integer greater than 0"), (-4, 20, "must be an integer greater than 0"), (2, 0, "greater than or equal to 'k'")])
+@pytest.mark.parametrize(
+    "k, fetch_k, error_msg",
+    [
+        (0, 20, "must be an integer greater than 0"),
+        (-4, 20, "must be an integer greater than 0"),
+        (2, 0, "greater than or equal to 'k'"),
+    ],
+)
 async def test_hanavector_max_marginal_relevance_search_async_invalid(
     texts: list[str], k: int, fetch_k: int, error_msg: str
 ) -> None:

@@ -55,7 +55,7 @@ def dummy_similarity_search(query, k=4):
         ("apple", None, "Query: apple, k=4"),
         ("banana", 3, "Query: banana, k=3"),
         ("cherry", 2, "Query: cherry, k=2"),
-    ]
+    ],
 )
 def test_similarity_search_valid(query, k, expected):
     if k is None:
@@ -70,7 +70,7 @@ def test_similarity_search_valid(query, k, expected):
     [
         ("orange", 0),
         ("mango", -1),
-    ]
+    ],
 )
 def test_similarity_search_invalid(query, k):
     with pytest.raises(ValueError, match="must be an integer greater than 0"):
@@ -88,7 +88,7 @@ def dummy_max_marginal_relevance_search(query, k=4, fetch_k=10):
         ("apple", None, None, "Query: apple, k=4, fetch_k=10"),
         ("banana", 3, 5, "Query: banana, k=3, fetch_k=5"),
         ("cherry", 2, 2, "Query: cherry, k=2, fetch_k=2"),
-    ]
+    ],
 )
 def test_max_marginal_relevance_search_valid(query, k, fetch_k, expected):
     if k is None and fetch_k is None:
@@ -106,7 +106,7 @@ def test_max_marginal_relevance_search_valid(query, k, fetch_k, expected):
         ("orange", 0, 5, "must be an integer greater than 0"),
         ("mango", -1, 5, "must be an integer greater than 0"),
         ("grape", 5, 3, "greater than or equal to 'k'"),
-    ]
+    ],
 )
 def test_max_marginal_relevance_search_invalid(query, k, fetch_k, match):
     with pytest.raises(ValueError, match=match):

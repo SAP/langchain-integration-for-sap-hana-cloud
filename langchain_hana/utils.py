@@ -11,9 +11,11 @@ class DistanceStrategy(str, Enum):
     JACCARD = "JACCARD"
     COSINE = "COSINE"
 
-def _validate_k(k : int):
+
+def _validate_k(k: int):
     if not isinstance(k, int) or k <= 0:
         raise ValueError("Parameter 'k' must be an integer greater than 0")
+
 
 def _validate_k_and_fetch_k(k: int, fetch_k: int):
     _validate_k(k)

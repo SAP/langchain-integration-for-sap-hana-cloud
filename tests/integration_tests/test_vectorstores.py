@@ -323,7 +323,9 @@ def test_hanavector_similarity_search_by_vector_simple(texts: List[str]) -> None
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 @pytest.mark.parametrize("k", [0, -4])
-def test_hanavector_similarity_search_by_vector_simple_invalid(texts: list[str], k: int) -> None:
+def test_hanavector_similarity_search_by_vector_simple_invalid(
+    texts: list[str], k: int
+) -> None:
     table_name = "TEST_TABLE_SEARCH_SIMPLE_VECTOR_INVALID"
 
     # Check if table is created
@@ -701,7 +703,14 @@ def test_hanavector_max_marginal_relevance_search(texts: List[str]) -> None:
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-@pytest.mark.parametrize("k, fetch_k, error_msg", [(0, 20, "must be an integer greater than 0"), (-4, 20, "must be an integer greater than 0"), (2, 0, "greater than or equal to 'k'")])
+@pytest.mark.parametrize(
+    "k, fetch_k, error_msg",
+    [
+        (0, 20, "must be an integer greater than 0"),
+        (-4, 20, "must be an integer greater than 0"),
+        (2, 0, "greater than or equal to 'k'"),
+    ],
+)
 def test_hanavector_max_marginal_relevance_search_invalid(
     texts: list[str], k: int, fetch_k: int, error_msg: str
 ) -> None:
@@ -762,7 +771,14 @@ async def test_hanavector_max_marginal_relevance_search_async(texts: List[str]) 
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-@pytest.mark.parametrize("k, fetch_k, error_msg", [(0, 20, "must be an integer greater than 0"), (-4, 20, "must be an integer greater than 0"), (2, 0, "greater than or equal to 'k'")])
+@pytest.mark.parametrize(
+    "k, fetch_k, error_msg",
+    [
+        (0, 20, "must be an integer greater than 0"),
+        (-4, 20, "must be an integer greater than 0"),
+        (2, 0, "greater than or equal to 'k'"),
+    ],
+)
 async def test_hanavector_max_marginal_relevance_search_async_invalid(
     texts: list[str], k: int, fetch_k: int, error_msg: str
 ) -> None:

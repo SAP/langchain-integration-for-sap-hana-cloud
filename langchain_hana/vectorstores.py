@@ -1106,7 +1106,6 @@ class HanaDB(VectorStore):
         array_wo_brackets = array_as_string[1:-1]
         return [float(x) for x in array_wo_brackets.split(",")]
 
-    
     def max_marginal_relevance_search_by_vector(  # type: ignore[override]
         self,
         embedding: list[float],
@@ -1115,7 +1114,6 @@ class HanaDB(VectorStore):
         lambda_mult: float = 0.5,
         filter: Optional[dict] = None,
     ) -> list[Document]:
-
         _validate_k_and_fetch_k(k, fetch_k)
 
         whole_result = self.similarity_search_with_score_and_vector_by_vector(
