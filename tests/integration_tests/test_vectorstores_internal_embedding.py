@@ -80,8 +80,8 @@ def teardown_module(module):  # type: ignore[no-untyped-def]
 
 
 @pytest.fixture
-def vectorDB_empty():
-    table_name = "TEST_TABLE_EMPTY"
+def vectorDB():
+    table_name = "TEST_TABLE"
     vectorDB = HanaDB(
         connection=config.conn,
         embedding=embedding,
@@ -93,42 +93,10 @@ def vectorDB_empty():
     HanaTestUtils.drop_table(config.conn, table_name)
 
 
-@pytest.fixture
-def vectorDB_with_texts():
-    table_name = "TEST_TABLE_WITH_TEXTS"
-    vectorDB = HanaDB.from_texts(
-        connection=config.conn,
-        embedding=embedding,
-        texts=HanaTestUtils.TEXTS,
-        table_name=table_name,
-    )
+def test_hanavector_add_texts(vectorDB) -> None:
+    table_name = "TEST_TABLE"
 
-    yield vectorDB
-
-    HanaTestUtils.drop_table(config.conn, table_name)
-
-
-@pytest.fixture
-def vectorDB_with_texts_and_metadatas():
-    table_name = "TEST_TABLE_WITH_TEXTS_AND_METADATAS"
-
-    vectorDB = HanaDB.from_texts(
-        connection=config.conn,
-        embedding=embedding,
-        texts=HanaTestUtils.TEXTS,
-        metadatas=HanaTestUtils.METADATAS,
-        table_name=table_name,
-    )
-
-    yield vectorDB
-
-    HanaTestUtils.drop_table(config.conn, table_name)
-
-
-def test_hanavector_add_texts(vectorDB_empty) -> None:
-    table_name = "TEST_TABLE_EMPTY"
-
-    vectorDB_empty.add_texts(
+    vectorDB.add_texts(
         texts=HanaTestUtils.TEXTS, metadatas=HanaTestUtils.METADATAS
     )
 
@@ -145,9 +113,12 @@ def test_hanavector_add_texts(vectorDB_empty) -> None:
 
 
 def test_hanavector_similarity_search_with_metadata_filter(
-    vectorDB_with_texts_and_metadatas,
+    vectorDB,
 ) -> None:
-    search_result = vectorDB_with_texts_and_metadatas.similarity_search(
+    
+    vectorDB.add_texts(texts=HanaTestUtils.TEXTS, metadatas=HanaTestUtils.METADATAS)
+
+    search_result = vectorDB.similarity_search(
         HanaTestUtils.TEXTS[0], 3, filter={"start": 100}
     )
 
@@ -156,12 +127,12 @@ def test_hanavector_similarity_search_with_metadata_filter(
     assert HanaTestUtils.METADATAS[1]["start"] == search_result[0].metadata["start"]
     assert HanaTestUtils.METADATAS[1]["end"] == search_result[0].metadata["end"]
 
-    search_result = vectorDB_with_texts_and_metadatas.similarity_search(
+    search_result = vectorDB.similarity_search(
         HanaTestUtils.TEXTS[0], 3, filter={"start": 100, "end": 150}
     )
     assert len(search_result) == 0
 
-    search_result = vectorDB_with_texts_and_metadatas.similarity_search(
+    search_result = vectorDB.similarity_search(
         HanaTestUtils.TEXTS[0], 3, filter={"start": 100, "end": 200}
     )
     assert len(search_result) == 1
@@ -177,16 +148,17 @@ def test_hanavector_similarity_search_simple_invalid(vectorDB, k: int) -> None:
         vectorDB.similarity_search(HanaTestUtils.TEXTS[0], k)
 
 
-def test_hanavector_max_marginal_relevance_search(
-    texts: list[str], vectorDB_with_texts
-) -> None:
-    search_result = vectorDB_with_texts.max_marginal_relevance_search(
+def test_hanavector_max_marginal_relevance_search(vectorDB) -> None:
+
+    vectorDB.add_texts(texts=HanaTestUtils.TEXTS)
+
+    search_result = vectorDB.max_marginal_relevance_search(
         HanaTestUtils.TEXTS[0], k=2, fetch_k=20
     )
 
     assert len(search_result) == 2
-    assert search_result[0].page_content == texts[0]
-    assert search_result[1].page_content != texts[0]
+    assert search_result[0].page_content == HanaTestUtils.TEXTS[0]
+    assert search_result[1].page_content != HanaTestUtils.TEXTS[0]
 
 
 @pytest.mark.parametrize(
