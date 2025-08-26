@@ -154,6 +154,22 @@ def test_hanavector_similarity_search_with_metadata_filter(
     assert metadatas[1]["end"] == search_result[0].metadata["end"]
 
 
+@pytest.mark.parametrize("k", [0, -4])
+def test_hanavector_similarity_search_simple_invalid(texts: list[str], k: int) -> None:
+    table_name = "TEST_TABLE_SEARCH_SIMPLE_INVALID"
+
+    # Check if table is created
+    vectorDB = HanaDB.from_texts(
+        connection=test_setup.conn,
+        texts=texts,
+        embedding=embedding,
+        table_name=table_name,
+    )
+
+    with pytest.raises(ValueError, match="must be an integer greater than 0"):
+        vectorDB.similarity_search(texts[0], k)
+
+
 def test_hanavector_max_marginal_relevance_search(texts: list[str]) -> None:
     table_name = "TEST_TABLE_MAX_RELEVANCE"
 
@@ -170,3 +186,53 @@ def test_hanavector_max_marginal_relevance_search(texts: list[str]) -> None:
     assert len(search_result) == 2
     assert search_result[0].page_content == texts[0]
     assert search_result[1].page_content != texts[0]
+
+
+@pytest.mark.parametrize(
+    "k, fetch_k, error_msg",
+    [
+        (0, 20, "must be an integer greater than 0"),
+        (-4, 20, "must be an integer greater than 0"),
+        (2, 0, "greater than or equal to 'k'"),
+    ],
+)
+def test_hanavector_max_marginal_relevance_search_invalid(
+    texts: list[str], k: int, fetch_k: int, error_msg: str
+) -> None:
+    table_name = "TEST_TABLE_MAX_RELEVANCE_INVALID"
+
+    # Check if table is created
+    vectorDB = HanaDB.from_texts(
+        connection=test_setup.conn,
+        texts=texts,
+        embedding=embedding,
+        table_name=table_name,
+    )
+
+    with pytest.raises(ValueError, match=error_msg):
+        vectorDB.max_marginal_relevance_search(texts[0], k, fetch_k)
+
+
+@pytest.mark.parametrize(
+    "k, fetch_k, error_msg",
+    [
+        (0, 20, "must be an integer greater than 0"),
+        (-4, 20, "must be an integer greater than 0"),
+        (2, 0, "greater than or equal to 'k'"),
+    ],
+)
+async def test_hanavector_max_marginal_relevance_search_async_invalid(
+    texts: list[str], k: int, fetch_k: int, error_msg: str
+) -> None:
+    table_name = "TEST_TABLE_MAX_RELEVANCE_ASYNC_INVALID"
+
+    # Check if table is created
+    vectorDB = HanaDB.from_texts(
+        connection=test_setup.conn,
+        texts=texts,
+        embedding=embedding,
+        table_name=table_name,
+    )
+
+    with pytest.raises(ValueError, match=error_msg):
+        await vectorDB.amax_marginal_relevance_search(texts[0], k, fetch_k)

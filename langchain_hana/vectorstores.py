@@ -29,7 +29,7 @@ from langchain_hana.query_constructors import (
     LOGICAL_OPERATORS_TO_SQL,
     CreateWhereClause,
 )
-from langchain_hana.utils import DistanceStrategy
+from langchain_hana.utils import DistanceStrategy, _validate_k, _validate_k_and_fetch_k
 
 logger = logging.getLogger(__name__)
 
@@ -808,7 +808,7 @@ class HanaDB(VectorStore):
     def _similarity_search_with_score_and_vector(
         self,
         embedding_expr: str,
-        k: int = 4,
+        k: int,
         filter: Optional[dict] = None,
         vector_embedding_params: Optional[list[str]] = None,
     ) -> list[tuple[Document, float, list[float]]]:
@@ -832,8 +832,10 @@ class HanaDB(VectorStore):
             - float: The similarity score
             - list[float]: The document's embedding vector
         """
+
+        _validate_k(k)
+
         result = []
-        k = HanaDB._sanitize_int(k)
         distance_func_name = HANA_DISTANCE_FUNCTION[self.distance_strategy][0]
 
         # Generate metadata projection for filtered results
@@ -1111,6 +1113,8 @@ class HanaDB(VectorStore):
         lambda_mult: float = 0.5,
         filter: Optional[dict] = None,
     ) -> list[Document]:
+        _validate_k_and_fetch_k(k, fetch_k)
+
         whole_result = self.similarity_search_with_score_and_vector_by_vector(
             embedding=embedding, k=fetch_k, filter=filter
         )
