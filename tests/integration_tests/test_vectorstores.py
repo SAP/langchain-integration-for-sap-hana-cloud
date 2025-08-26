@@ -13,6 +13,7 @@ from tests.integration_tests.fixtures.filtering_test_cases import (
     DOCUMENTS,
     FILTERING_TEST_CASES,
 )
+from tests.integration_tests.hana_test_constants import HanaTestConstants
 from tests.integration_tests.hana_test_utils import HanaTestUtils
 
 try:
@@ -51,10 +52,10 @@ config = Config()
 
 def setup_module(module):  # type: ignore[no-untyped-def]
     config.conn = dbapi.connect(
-        address=os.environ.get("HANA_DB_ADDRESS"),
-        port=os.environ.get("HANA_DB_PORT"),
-        user=os.environ.get("HANA_DB_USER"),
-        password=os.environ.get("HANA_DB_PASSWORD"),
+        address=os.environ["HANA_DB_ADDRESS"],
+        port=os.environ["HANA_DB_PORT"],
+        user=os.environ["HANA_DB_USER"],
+        password=os.environ["HANA_DB_PASSWORD"],
         autocommit=True,
         sslValidateCertificate=False,
         # encrypt=True
@@ -71,16 +72,15 @@ def teardown_module(module):  # type: ignore[no-untyped-def]
 
 @pytest.fixture
 def vectorDB():
-    table_name = "TEST_TABLE"
     vectorDB = HanaDB(
         connection=config.conn,
         embedding=embedding,
-        table_name=table_name,
+        table_name=HanaTestConstants.TABLE_NAME,
     )
 
     yield vectorDB
 
-    HanaTestUtils.drop_table(config.conn, table_name)
+    HanaTestUtils.drop_table(config.conn, HanaTestConstants.TABLE_NAME)
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
@@ -150,10 +150,10 @@ def test_hanavector_table_with_nvarchar_content() -> None:
         vector_column=vector_column,
     )
 
-    vectordb.add_texts(texts=HanaTestUtils.TEXTS)
+    vectordb.add_texts(texts=HanaTestConstants.TEXTS)
 
     # check that embeddings have been created in the table
-    number_of_texts = len(HanaTestUtils.TEXTS)
+    number_of_texts = len(HanaTestConstants.TEXTS)
     number_of_rows = -1
     sql_str = f"SELECT COUNT(*) FROM {table_name}"
     cur = config.conn.cursor()
@@ -221,14 +221,12 @@ def test_hanavector_non_existing_table_fixed_vector_length() -> None:
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_add_texts(vectorDB) -> None:
-    table_name = "TEST_TABLE"
-
-    vectorDB.add_texts(texts=HanaTestUtils.TEXTS)
+    vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
 
     # check that embeddings have been created in the table
-    number_of_texts = len(HanaTestUtils.TEXTS)
+    number_of_texts = len(HanaTestConstants.TEXTS)
     number_of_rows = -1
-    sql_str = f"SELECT COUNT(*) FROM {table_name}"
+    sql_str = f"SELECT COUNT(*) FROM {HanaTestConstants.TABLE_NAME}"
     cur = config.conn.cursor()
     cur.execute(sql_str)
     if cur.has_result_set():
@@ -239,22 +237,20 @@ def test_hanavector_add_texts(vectorDB) -> None:
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_from_texts() -> None:
-    table_name = "TEST_TABLE"
-
     vectorDB = HanaDB.from_texts(
         connection=config.conn,
-        texts=HanaTestUtils.TEXTS,
+        texts=HanaTestConstants.TEXTS,
         embedding=embedding,
-        table_name=table_name,
+        table_name=HanaTestConstants.TABLE_NAME,
     )
 
     # test if vectorDB is instance of HanaDB
     assert isinstance(vectorDB, HanaDB)
 
     # check that embeddings have been created in the table
-    number_of_texts = len(HanaTestUtils.TEXTS)
+    number_of_texts = len(HanaTestConstants.TEXTS)
     number_of_rows = -1
-    sql_str = f"SELECT COUNT(*) FROM {table_name}"
+    sql_str = f"SELECT COUNT(*) FROM {HanaTestConstants.TABLE_NAME}"
     cur = config.conn.cursor()
     cur.execute(sql_str)
     if cur.has_result_set():
@@ -265,20 +261,15 @@ def test_hanavector_from_texts() -> None:
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_simple(vectorDB) -> None:
-
-    vectorDB.add_texts(texts=HanaTestUtils.TEXTS)
+    vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
 
     assert (
-        HanaTestUtils.TEXTS[0]
-        == vectorDB.similarity_search(HanaTestUtils.TEXTS[0], 1)[
-            0
-        ].page_content
+        HanaTestConstants.TEXTS[0]
+        == vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 1)[0].page_content
     )
     assert (
-        HanaTestUtils.TEXTS[1]
-        != vectorDB.similarity_search(HanaTestUtils.TEXTS[0], 1)[
-            0
-        ].page_content
+        HanaTestConstants.TEXTS[1]
+        != vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 1)[0].page_content
     )
 
 
@@ -291,16 +282,15 @@ def test_hanavector_similarity_search_simple_invalid(vectorDB, k: int) -> None:
         
 
 def test_hanavector_similarity_search_by_vector_simple(vectorDB) -> None:
+    vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
 
-    vectorDB.add_texts(texts=HanaTestUtils.TEXTS)
-
-    vector = embedding.embed_query(HanaTestUtils.TEXTS[0])
+    vector = embedding.embed_query(HanaTestConstants.TEXTS[0])
     assert (
-        HanaTestUtils.TEXTS[0]
+        HanaTestConstants.TEXTS[0]
         == vectorDB.similarity_search_by_vector(vector, 1)[0].page_content
     )
     assert (
-        HanaTestUtils.TEXTS[1]
+        HanaTestConstants.TEXTS[1]
         != vectorDB.similarity_search_by_vector(vector, 1)[0].page_content
     )
 
@@ -324,19 +314,19 @@ def test_hanavector_similarity_search_simple_euclidean_distance(
     # Check if table is created
     vectorDB = HanaDB.from_texts(
         connection=config.conn,
-        texts=HanaTestUtils.TEXTS,
+        texts=HanaTestConstants.TEXTS,
         embedding=embedding,
         table_name=table_name,
         distance_strategy=DistanceStrategy.EUCLIDEAN_DISTANCE,
     )
 
     assert (
-        HanaTestUtils.TEXTS[0]
-        == vectorDB.similarity_search(HanaTestUtils.TEXTS[0], 1)[0].page_content
+        HanaTestConstants.TEXTS[0]
+        == vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 1)[0].page_content
     )
     assert (
-        HanaTestUtils.TEXTS[1]
-        != vectorDB.similarity_search(HanaTestUtils.TEXTS[0], 1)[0].page_content
+        HanaTestConstants.TEXTS[1]
+        != vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 1)[0].page_content
     )
 
 
@@ -344,92 +334,95 @@ def test_hanavector_similarity_search_simple_euclidean_distance(
 def test_hanavector_similarity_search_with_metadata(
     vectorDB,
 ) -> None:
-    
-    vectorDB.add_texts(texts=HanaTestUtils.TEXTS, metadatas=HanaTestUtils.METADATAS)
-
-    search_result = vectorDB.similarity_search(
-        HanaTestUtils.TEXTS[0], 3
+    vectorDB.add_texts(
+        texts=HanaTestConstants.TEXTS, metadatas=HanaTestConstants.METADATAS
     )
 
-    assert HanaTestUtils.TEXTS[0] == search_result[0].page_content
-    assert HanaTestUtils.METADATAS[0]["start"] == search_result[0].metadata["start"]
-    assert HanaTestUtils.METADATAS[0]["end"] == search_result[0].metadata["end"]
-    assert HanaTestUtils.TEXTS[1] != search_result[0].page_content
-    assert HanaTestUtils.METADATAS[1]["start"] != search_result[0].metadata["start"]
-    assert HanaTestUtils.METADATAS[1]["end"] != search_result[0].metadata["end"]
+    search_result = vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 3)
+
+    assert HanaTestConstants.TEXTS[0] == search_result[0].page_content
+    assert HanaTestConstants.METADATAS[0]["start"] == search_result[0].metadata["start"]
+    assert HanaTestConstants.METADATAS[0]["end"] == search_result[0].metadata["end"]
+    assert HanaTestConstants.TEXTS[1] != search_result[0].page_content
+    assert HanaTestConstants.METADATAS[1]["start"] != search_result[0].metadata["start"]
+    assert HanaTestConstants.METADATAS[1]["end"] != search_result[0].metadata["end"]
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_with_metadata_filter(
     vectorDB,
 ) -> None:
-    
-    vectorDB.add_texts(texts=HanaTestUtils.TEXTS, metadatas=HanaTestUtils.METADATAS)
+    vectorDB.add_texts(
+        texts=HanaTestConstants.TEXTS, metadatas=HanaTestConstants.METADATAS
+    )
 
     search_result = vectorDB.similarity_search(
-        HanaTestUtils.TEXTS[0], 3, filter={"start": 100}
+        HanaTestConstants.TEXTS[0], 3, filter={"start": 100}
     )
 
     assert len(search_result) == 1
-    assert HanaTestUtils.TEXTS[1] == search_result[0].page_content
-    assert HanaTestUtils.METADATAS[1]["start"] == search_result[0].metadata["start"]
-    assert HanaTestUtils.METADATAS[1]["end"] == search_result[0].metadata["end"]
+    assert HanaTestConstants.TEXTS[1] == search_result[0].page_content
+    assert HanaTestConstants.METADATAS[1]["start"] == search_result[0].metadata["start"]
+    assert HanaTestConstants.METADATAS[1]["end"] == search_result[0].metadata["end"]
 
     search_result = vectorDB.similarity_search(
-        HanaTestUtils.TEXTS[0], 3, filter={"start": 100, "end": 150}
+        HanaTestConstants.TEXTS[0], 3, filter={"start": 100, "end": 150}
     )
     assert len(search_result) == 0
 
     search_result = vectorDB.similarity_search(
-        HanaTestUtils.TEXTS[0], 3, filter={"start": 100, "end": 200}
+        HanaTestConstants.TEXTS[0], 3, filter={"start": 100, "end": 200}
     )
     assert len(search_result) == 1
-    assert HanaTestUtils.TEXTS[1] == search_result[0].page_content
-    assert HanaTestUtils.METADATAS[1]["start"] == search_result[0].metadata["start"]
-    assert HanaTestUtils.METADATAS[1]["end"] == search_result[0].metadata["end"]
+    assert HanaTestConstants.TEXTS[1] == search_result[0].page_content
+    assert HanaTestConstants.METADATAS[1]["start"] == search_result[0].metadata["start"]
+    assert HanaTestConstants.METADATAS[1]["end"] == search_result[0].metadata["end"]
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_with_metadata_filter_string(
     vectorDB,
 ) -> None:
-    
-    vectorDB.add_texts(texts=HanaTestUtils.TEXTS, metadatas=HanaTestUtils.METADATAS)
+    vectorDB.add_texts(
+        texts=HanaTestConstants.TEXTS, metadatas=HanaTestConstants.METADATAS
+    )
 
     search_result = vectorDB.similarity_search(
-        HanaTestUtils.TEXTS[0], 3, filter={"quality": "bad"}
+        HanaTestConstants.TEXTS[0], 3, filter={"quality": "bad"}
     )
 
     assert len(search_result) == 1
-    assert HanaTestUtils.TEXTS[1] == search_result[0].page_content
+    assert HanaTestConstants.TEXTS[1] == search_result[0].page_content
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_with_metadata_filter_bool(
     vectorDB,
 ) -> None:
-    
-    vectorDB.add_texts(texts=HanaTestUtils.TEXTS, metadatas=HanaTestUtils.METADATAS)
+    vectorDB.add_texts(
+        texts=HanaTestConstants.TEXTS, metadatas=HanaTestConstants.METADATAS
+    )
 
     search_result = vectorDB.similarity_search(
-        HanaTestUtils.TEXTS[0], 3, filter={"ready": False}
+        HanaTestConstants.TEXTS[0], 3, filter={"ready": False}
     )
 
     assert len(search_result) == 1
-    assert HanaTestUtils.TEXTS[1] == search_result[0].page_content
+    assert HanaTestConstants.TEXTS[1] == search_result[0].page_content
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_with_metadata_filter_invalid_type(
     vectorDB,
 ) -> None:
-    
-    vectorDB.add_texts(texts=HanaTestUtils.TEXTS, metadatas=HanaTestUtils.METADATAS)
+    vectorDB.add_texts(
+        texts=HanaTestConstants.TEXTS, metadatas=HanaTestConstants.METADATAS
+    )
 
     exception_occured = False
     try:
         vectorDB.similarity_search(
-            HanaTestUtils.TEXTS[0], 3, filter={"wrong_type": 0.1}
+            HanaTestConstants.TEXTS[0], 3, filter={"wrong_type": 0.1}
         )
     except ValueError:
         exception_occured = True
@@ -438,14 +431,11 @@ def test_hanavector_similarity_search_with_metadata_filter_invalid_type(
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_with_score(vectorDB) -> None:
+    vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
 
-    vectorDB.add_texts(texts=HanaTestUtils.TEXTS)
+    search_result = vectorDB.similarity_search_with_score(HanaTestConstants.TEXTS[0], 3)
 
-    search_result = vectorDB.similarity_search_with_score(
-        HanaTestUtils.TEXTS[0], 3
-    )
-
-    assert search_result[0][0].page_content == HanaTestUtils.TEXTS[0]
+    assert search_result[0][0].page_content == HanaTestConstants.TEXTS[0]
     assert search_result[0][1] == 1.0
     assert search_result[1][1] <= search_result[0][1]
     assert search_result[2][1] <= search_result[1][1]
@@ -454,14 +444,13 @@ def test_hanavector_similarity_search_with_score(vectorDB) -> None:
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_with_relevance_score(vectorDB) -> None:
-
-    vectorDB.add_texts(texts=HanaTestUtils.TEXTS)
+    vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
 
     search_result = vectorDB.similarity_search_with_relevance_scores(
-        HanaTestUtils.TEXTS[0], 3
+        HanaTestConstants.TEXTS[0], 3
     )
 
-    assert search_result[0][0].page_content == HanaTestUtils.TEXTS[0]
+    assert search_result[0][0].page_content == HanaTestConstants.TEXTS[0]
     assert search_result[0][1] == 1.0
     assert search_result[1][1] <= search_result[0][1]
     assert search_result[2][1] <= search_result[1][1]
@@ -477,17 +466,17 @@ def test_hanavector_similarity_search_with_relevance_score_with_euclidian_distan
     # Check if table is created
     vectorDB = HanaDB.from_texts(
         connection=config.conn,
-        texts=HanaTestUtils.TEXTS,
+        texts=HanaTestConstants.TEXTS,
         embedding=embedding,
         table_name=table_name,
         distance_strategy=DistanceStrategy.EUCLIDEAN_DISTANCE,
     )
 
     search_result = vectorDB.similarity_search_with_relevance_scores(
-        HanaTestUtils.TEXTS[0], 3
+        HanaTestConstants.TEXTS[0], 3
     )
 
-    assert search_result[0][0].page_content == HanaTestUtils.TEXTS[0]
+    assert search_result[0][0].page_content == HanaTestConstants.TEXTS[0]
     assert search_result[0][1] == 1.0
     assert search_result[1][1] <= search_result[0][1]
     assert search_result[2][1] <= search_result[1][1]
@@ -501,15 +490,15 @@ def test_hanavector_similarity_search_with_score_with_euclidian_distance() -> No
     # Check if table is created
     vectorDB = HanaDB.from_texts(
         connection=config.conn,
-        texts=HanaTestUtils.TEXTS,
+        texts=HanaTestConstants.TEXTS,
         embedding=embedding,
         table_name=table_name,
         distance_strategy=DistanceStrategy.EUCLIDEAN_DISTANCE,
     )
 
-    search_result = vectorDB.similarity_search_with_score(HanaTestUtils.TEXTS[0], 3)
+    search_result = vectorDB.similarity_search_with_score(HanaTestConstants.TEXTS[0], 3)
 
-    assert search_result[0][0].page_content == HanaTestUtils.TEXTS[0]
+    assert search_result[0][0].page_content == HanaTestConstants.TEXTS[0]
     assert search_result[0][1] == 0.0
     assert search_result[1][1] >= search_result[0][1]
     assert search_result[2][1] >= search_result[1][1]
@@ -517,20 +506,17 @@ def test_hanavector_similarity_search_with_score_with_euclidian_distance() -> No
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_delete_with_filter(vectorDB) -> None:
-
-    vectorDB.add_texts(texts=HanaTestUtils.TEXTS, metadatas=HanaTestUtils.METADATAS)
-
-    search_result = vectorDB.similarity_search(
-        HanaTestUtils.TEXTS[0], 10
+    vectorDB.add_texts(
+        texts=HanaTestConstants.TEXTS, metadatas=HanaTestConstants.METADATAS
     )
+
+    search_result = vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 10)
     assert len(search_result) == 5
 
     # Delete one of the three entries
     assert vectorDB.delete(filter={"start": 100, "end": 200})
 
-    search_result = vectorDB.similarity_search(
-        HanaTestUtils.TEXTS[0], 10
-    )
+    search_result = vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 10)
     assert len(search_result) == 4
 
 
@@ -538,22 +524,17 @@ def test_hanavector_delete_with_filter(vectorDB) -> None:
 async def test_hanavector_delete_with_filter_async(
     vectorDB,
 ) -> None:
-    
-    vectorDB.add_texts(texts=HanaTestUtils.TEXTS, metadatas=HanaTestUtils.METADATAS)
-
-    search_result = vectorDB.similarity_search(
-        HanaTestUtils.TEXTS[0], 10
+    vectorDB.add_texts(
+        texts=HanaTestConstants.TEXTS, metadatas=HanaTestConstants.METADATAS
     )
+
+    search_result = vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 10)
     assert len(search_result) == 5
 
     # Delete one of the three entries
-    assert await vectorDB.adelete(
-        filter={"start": 100, "end": 200}
-    )
+    assert await vectorDB.adelete(filter={"start": 100, "end": 200})
 
-    search_result = vectorDB.similarity_search(
-        HanaTestUtils.TEXTS[0], 10
-    )
+    search_result = vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 10)
     assert len(search_result) == 4
 
 
@@ -561,27 +542,25 @@ async def test_hanavector_delete_with_filter_async(
 def test_hanavector_delete_all_with_empty_filter(
     vectorDB,
 ) -> None:
-    
-    vectorDB.add_texts(texts=HanaTestUtils.TEXTS, metadatas=HanaTestUtils.METADATAS)
-
-    search_result = vectorDB.similarity_search(
-        HanaTestUtils.TEXTS[0], 3
+    vectorDB.add_texts(
+        texts=HanaTestConstants.TEXTS, metadatas=HanaTestConstants.METADATAS
     )
+
+    search_result = vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 3)
     assert len(search_result) == 3
 
     # Delete all entries
     assert vectorDB.delete(filter={})
 
-    search_result = vectorDB.similarity_search(
-        HanaTestUtils.TEXTS[0], 3
-    )
+    search_result = vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 3)
     assert len(search_result) == 0
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_delete_called_wrong(vectorDB) -> None:
-
-    vectorDB.add_texts(texts=HanaTestUtils.TEXTS, metadatas=HanaTestUtils.METADATAS)
+    vectorDB.add_texts(
+        texts=HanaTestConstants.TEXTS, metadatas=HanaTestConstants.METADATAS
+    )
 
     # Delete without filter parameter
     exception_occured = False
@@ -594,9 +573,7 @@ def test_hanavector_delete_called_wrong(vectorDB) -> None:
     # Delete with ids parameter
     exception_occured = False
     try:
-        vectorDB.delete(
-            ids=["id1", "id"], filter={"start": 100, "end": 200}
-        )
+        vectorDB.delete(ids=["id1", "id"], filter={"start": 100, "end": 200})
     except ValueError:
         exception_occured = True
     assert exception_occured
@@ -604,16 +581,15 @@ def test_hanavector_delete_called_wrong(vectorDB) -> None:
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_max_marginal_relevance_search(vectorDB) -> None:
-
-    vectorDB.add_texts(texts=HanaTestUtils.TEXTS)
+    vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
 
     search_result = vectorDB.max_marginal_relevance_search(
-        HanaTestUtils.TEXTS[0], k=2, fetch_k=20
+        HanaTestConstants.TEXTS[0], k=2, fetch_k=20
     )
 
     assert len(search_result) == 2
-    assert search_result[0].page_content == HanaTestUtils.TEXTS[0]
-    assert search_result[1].page_content != HanaTestUtils.TEXTS[0]
+    assert search_result[0].page_content == HanaTestConstants.TEXTS[0]
+    assert search_result[1].page_content != HanaTestConstants.TEXTS[0]
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
@@ -635,32 +611,30 @@ def test_hanavector_max_marginal_relevance_search_invalid(
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_max_marginal_relevance_search_vector(vectorDB) -> None:
-
-    vectorDB.add_texts(texts=HanaTestUtils.TEXTS)
+    vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
 
     search_result = vectorDB.max_marginal_relevance_search_by_vector(
-        embedding.embed_query(HanaTestUtils.TEXTS[0]), k=2, fetch_k=20
+        embedding.embed_query(HanaTestConstants.TEXTS[0]), k=2, fetch_k=20
     )
 
     assert len(search_result) == 2
-    assert search_result[0].page_content == HanaTestUtils.TEXTS[0]
-    assert search_result[1].page_content != HanaTestUtils.TEXTS[0]
+    assert search_result[0].page_content == HanaTestConstants.TEXTS[0]
+    assert search_result[1].page_content != HanaTestConstants.TEXTS[0]
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 async def test_hanavector_max_marginal_relevance_search_async(
     vectorDB,
 ) -> None:
-    
-    vectorDB.add_texts(texts=HanaTestUtils.TEXTS)
+    vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
 
     search_result = await vectorDB.amax_marginal_relevance_search(
-        HanaTestUtils.TEXTS[0], k=2, fetch_k=20
+        HanaTestConstants.TEXTS[0], k=2, fetch_k=20
     )
 
     assert len(search_result) == 2
-    assert search_result[0].page_content == HanaTestUtils.TEXTS[0]
-    assert search_result[1].page_content != HanaTestUtils.TEXTS[0]
+    assert search_result[0].page_content == HanaTestConstants.TEXTS[0]
+    assert search_result[1].page_content != HanaTestConstants.TEXTS[0]
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
@@ -684,54 +658,48 @@ async def test_hanavector_max_marginal_relevance_search_async_invalid(
 def test_hanavector_filter_prepared_statement_params(
     vectorDB,
 ) -> None:
-    
-    vectorDB.add_texts(texts=HanaTestUtils.TEXTS, metadatas=HanaTestUtils.METADATAS)
-
-    table_name = "TEST_TABLE"
-    cur = config.conn.cursor()
-    sql_str = (
-        f"SELECT * FROM {table_name} WHERE JSON_VALUE(VEC_META, '$.start') = '100'"
+    vectorDB.add_texts(
+        texts=HanaTestConstants.TEXTS, metadatas=HanaTestConstants.METADATAS
     )
+
+    cur = config.conn.cursor()
+    sql_str = f"SELECT * FROM {HanaTestConstants.TABLE_NAME} WHERE JSON_VALUE(VEC_META, '$.start') = '100'"
     cur.execute(sql_str)
     rows = cur.fetchall()
     assert len(rows) == 1
 
     query_value = 100
-    sql_str = f"SELECT * FROM {table_name} WHERE JSON_VALUE(VEC_META, '$.start') = ?"
+    sql_str = f"SELECT * FROM {HanaTestConstants.TABLE_NAME} WHERE JSON_VALUE(VEC_META, '$.start') = ?"
     cur.execute(sql_str, (query_value))
     rows = cur.fetchall()
     assert len(rows) == 1
 
-    sql_str = (
-        f"SELECT * FROM {table_name} WHERE JSON_VALUE(VEC_META, '$.quality') = 'good'"
-    )
+    sql_str = f"SELECT * FROM {HanaTestConstants.TABLE_NAME} WHERE JSON_VALUE(VEC_META, '$.quality') = 'good'"
     cur.execute(sql_str)
     rows = cur.fetchall()
     assert len(rows) == 1
 
     query_value = "good"  # type: ignore[assignment]
-    sql_str = f"SELECT * FROM {table_name} WHERE JSON_VALUE(VEC_META, '$.quality') = ?"
+    sql_str = f"SELECT * FROM {HanaTestConstants.TABLE_NAME} WHERE JSON_VALUE(VEC_META, '$.quality') = ?"
     cur.execute(sql_str, (query_value))
     rows = cur.fetchall()
     assert len(rows) == 1
 
-    sql_str = (
-        f"SELECT * FROM {table_name} WHERE JSON_VALUE(VEC_META, '$.ready') = false"
-    )
+    sql_str = f"SELECT * FROM {HanaTestConstants.TABLE_NAME} WHERE JSON_VALUE(VEC_META, '$.ready') = false"
     cur.execute(sql_str)
     rows = cur.fetchall()
     assert len(rows) == 1
 
     # query_value = True
     query_value = "true"  # type: ignore[assignment]
-    sql_str = f"SELECT * FROM {table_name} WHERE JSON_VALUE(VEC_META, '$.ready') = ?"
+    sql_str = f"SELECT * FROM {HanaTestConstants.TABLE_NAME} WHERE JSON_VALUE(VEC_META, '$.ready') = ?"
     cur.execute(sql_str, (query_value))
     rows = cur.fetchall()
     assert len(rows) == 3
 
     # query_value = False
     query_value = "false"  # type: ignore[assignment]
-    sql_str = f"SELECT * FROM {table_name} WHERE JSON_VALUE(VEC_META, '$.ready') = ?"
+    sql_str = f"SELECT * FROM {HanaTestConstants.TABLE_NAME} WHERE JSON_VALUE(VEC_META, '$.ready') = ?"
     cur.execute(sql_str, (query_value))
     rows = cur.fetchall()
     assert len(rows) == 1
@@ -747,7 +715,7 @@ def test_invalid_metadata_keys() -> None:
     try:
         HanaDB.from_texts(
             connection=config.conn,
-            texts=HanaTestUtils.TEXTS,
+            texts=HanaTestConstants.TEXTS,
             metadatas=invalid_metadatas,
             embedding=embedding,
             table_name=table_name,
@@ -763,7 +731,7 @@ def test_invalid_metadata_keys() -> None:
     try:
         HanaDB.from_texts(
             connection=config.conn,
-            texts=HanaTestUtils.TEXTS,
+            texts=HanaTestConstants.TEXTS,
             metadatas=invalid_metadatas,
             embedding=embedding,
             table_name=table_name,
@@ -790,10 +758,10 @@ def test_hanavector_table_mixed_case_names() -> None:
         vector_column=vector_column,
     )
 
-    vectordb.add_texts(texts=HanaTestUtils.TEXTS)
+    vectordb.add_texts(texts=HanaTestConstants.TEXTS)
 
     # check that embeddings have been created in the table
-    number_of_texts = len(HanaTestUtils.TEXTS)
+    number_of_texts = len(HanaTestConstants.TEXTS)
     number_of_rows = -1
     sql_str = f'SELECT COUNT(*) FROM "{table_name}"'
     cur = config.conn.cursor()
@@ -805,22 +773,9 @@ def test_hanavector_table_mixed_case_names() -> None:
 
     # check results of similarity search
     assert (
-        HanaTestUtils.TEXTS[0]
-        == vectordb.similarity_search(HanaTestUtils.TEXTS[0], 1)[0].page_content
+        HanaTestConstants.TEXTS[0]
+        == vectordb.similarity_search(HanaTestConstants.TEXTS[0], 1)[0].page_content
     )
-
-
-@pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_enhanced_filter_1() -> None:
-    table_name = "TEST_TABLE_ENHANCED_FILTER_1"
-
-    vectorDB = HanaDB(
-        connection=config.conn,
-        embedding=embedding,
-        table_name=table_name,
-    )
-
-    vectorDB.add_documents(DOCUMENTS)
 
 
 @pytest.mark.parametrize(
@@ -865,8 +820,8 @@ def test_preexisting_specific_columns_for_metadata_fill() -> None:
 
     vectorDB = HanaDB.from_texts(
         connection=config.conn,
-        texts=HanaTestUtils.TEXTS,
-        metadatas=HanaTestUtils.METADATAS,
+        texts=HanaTestConstants.TEXTS,
+        metadatas=HanaTestConstants.METADATAS,
         embedding=embedding,
         table_name=table_name,
         specific_metadata_columns=["Owner", "quality"],
@@ -924,8 +879,8 @@ def test_preexisting_specific_columns_for_metadata_via_array() -> None:
 
     vectorDB = HanaDB.from_texts(
         connection=config.conn,
-        texts=HanaTestUtils.TEXTS,
-        metadatas=HanaTestUtils.METADATAS,
+        texts=HanaTestConstants.TEXTS,
+        metadatas=HanaTestConstants.METADATAS,
         embedding=embedding,
         table_name=table_name,
         specific_metadata_columns=["quality"],
@@ -994,8 +949,8 @@ def test_preexisting_specific_columns_for_metadata_multiple_columns() -> None:
 
     vectorDB = HanaDB.from_texts(
         connection=config.conn,
-        texts=HanaTestUtils.TEXTS,
-        metadatas=HanaTestUtils.METADATAS,
+        texts=HanaTestConstants.TEXTS,
+        metadatas=HanaTestConstants.METADATAS,
         embedding=embedding,
         table_name=table_name,
         specific_metadata_columns=["quality", "start"],
@@ -1042,8 +997,8 @@ def test_preexisting_specific_columns_for_metadata_empty_columns() -> None:
 
     vectorDB = HanaDB.from_texts(
         connection=config.conn,
-        texts=HanaTestUtils.TEXTS,
-        metadatas=HanaTestUtils.METADATAS,
+        texts=HanaTestConstants.TEXTS,
+        metadatas=HanaTestConstants.METADATAS,
         embedding=embedding,
         table_name=table_name,
         specific_metadata_columns=["quality", "ready", "start"],
@@ -1094,8 +1049,8 @@ def test_preexisting_specific_columns_for_metadata_wrong_type_or_non_existing() 
     try:
         HanaDB.from_texts(
             connection=config.conn,
-            texts=HanaTestUtils.TEXTS,
-            metadatas=HanaTestUtils.METADATAS,
+            texts=HanaTestConstants.TEXTS,
+            metadatas=HanaTestConstants.METADATAS,
             embedding=embedding,
             table_name=table_name,
             specific_metadata_columns=["quality"],
@@ -1109,8 +1064,8 @@ def test_preexisting_specific_columns_for_metadata_wrong_type_or_non_existing() 
     try:
         HanaDB.from_texts(
             connection=config.conn,
-            texts=HanaTestUtils.TEXTS,
-            metadatas=HanaTestUtils.METADATAS,
+            texts=HanaTestConstants.TEXTS,
+            metadatas=HanaTestConstants.METADATAS,
             embedding=embedding,
             table_name=table_name,
             specific_metadata_columns=["NonExistingColumn"],
@@ -1143,8 +1098,8 @@ def test_preexisting_specific_columns_for_returned_metadata_completeness() -> No
 
     vectorDB = HanaDB.from_texts(
         connection=config.conn,
-        texts=HanaTestUtils.TEXTS,
-        metadatas=HanaTestUtils.METADATAS,
+        texts=HanaTestConstants.TEXTS,
+        metadatas=HanaTestConstants.METADATAS,
         embedding=embedding,
         table_name=table_name,
         specific_metadata_columns=["quality", "ready", "start", "NonExisting"],
@@ -1162,8 +1117,7 @@ def test_preexisting_specific_columns_for_returned_metadata_completeness() -> No
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_create_hnsw_index_with_default_values(vectorDB) -> None:
-
-    vectorDB.add_texts(texts=HanaTestUtils.TEXTS)
+    vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
 
     # Test the creation of HNSW index
     try:
@@ -1173,12 +1127,12 @@ def test_create_hnsw_index_with_default_values(vectorDB) -> None:
 
     # Perform a search using the index to confirm its correctness
     search_result = vectorDB.max_marginal_relevance_search(
-        HanaTestUtils.TEXTS[0], k=2, fetch_k=20
+        HanaTestConstants.TEXTS[0], k=2, fetch_k=20
     )
 
     assert len(search_result) == 2
-    assert search_result[0].page_content == HanaTestUtils.TEXTS[0]
-    assert search_result[1].page_content != HanaTestUtils.TEXTS[0]
+    assert search_result[0].page_content == HanaTestConstants.TEXTS[0]
+    assert search_result[1].page_content != HanaTestConstants.TEXTS[0]
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
@@ -1188,7 +1142,7 @@ def test_create_hnsw_index_with_defined_values() -> None:
     # Create table and insert data
     vectorDB = HanaDB.from_texts(
         connection=config.conn,
-        texts=HanaTestUtils.TEXTS,
+        texts=HanaTestConstants.TEXTS,
         embedding=embedding,
         table_name=table_name,
         distance_strategy=DistanceStrategy.EUCLIDEAN_DISTANCE,
@@ -1204,12 +1158,12 @@ def test_create_hnsw_index_with_defined_values() -> None:
 
     # Perform a search using the index to confirm its correctness
     search_result = vectorDB.max_marginal_relevance_search(
-        HanaTestUtils.TEXTS[0], k=2, fetch_k=20
+        HanaTestConstants.TEXTS[0], k=2, fetch_k=20
     )
 
     assert len(search_result) == 2
-    assert search_result[0].page_content == HanaTestUtils.TEXTS[0]
-    assert search_result[1].page_content != HanaTestUtils.TEXTS[0]
+    assert search_result[0].page_content == HanaTestConstants.TEXTS[0]
+    assert search_result[1].page_content != HanaTestConstants.TEXTS[0]
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
@@ -1220,21 +1174,20 @@ def test_create_hnsw_index_after_initialization(vectorDB) -> None:
     )
 
     # Add texts after index creation
-    vectorDB.add_texts(texts=HanaTestUtils.TEXTS)
+    vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
 
     # Perform similarity search using the index
-    search_result = vectorDB.similarity_search(HanaTestUtils.TEXTS[0], k=3)
+    search_result = vectorDB.similarity_search(HanaTestConstants.TEXTS[0], k=3)
 
     # Assert that search result is valid and has expected length
     assert len(search_result) == 3
-    assert search_result[0].page_content == HanaTestUtils.TEXTS[0]
-    assert search_result[1].page_content != HanaTestUtils.TEXTS[0]
+    assert search_result[0].page_content == HanaTestConstants.TEXTS[0]
+    assert search_result[1].page_content != HanaTestConstants.TEXTS[0]
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_duplicate_hnsw_index_creation(vectorDB) -> None:
-
-    vectorDB.add_texts(texts=HanaTestUtils.TEXTS)
+    vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
 
     # Create HNSW index for the first time
     vectorDB.create_hnsw_index(
@@ -1250,8 +1203,7 @@ def test_duplicate_hnsw_index_creation(vectorDB) -> None:
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_create_hnsw_index_invalid_m_value(vectorDB) -> None:
-
-    vectorDB.add_texts(texts=HanaTestUtils.TEXTS)
+    vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
 
     # Test invalid `m` value (too low)
     with pytest.raises(ValueError):
@@ -1264,8 +1216,7 @@ def test_create_hnsw_index_invalid_m_value(vectorDB) -> None:
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_create_hnsw_index_invalid_ef_construction(vectorDB) -> None:
-
-    vectorDB.add_texts(texts=HanaTestUtils.TEXTS)
+    vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
 
     # Test invalid `ef_construction` value (too low)
     with pytest.raises(ValueError):
@@ -1278,8 +1229,7 @@ def test_create_hnsw_index_invalid_ef_construction(vectorDB) -> None:
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_create_hnsw_index_invalid_ef_search(vectorDB) -> None:
-
-    vectorDB.add_texts(texts=HanaTestUtils.TEXTS)
+    vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
 
     # Test invalid `ef_search` value (too low)
     with pytest.raises(ValueError):
@@ -1311,8 +1261,8 @@ def test_hanavector_keyword_search() -> None:
 
     vectorDB = HanaDB.from_texts(
         connection=config.conn,
-        texts=HanaTestUtils.TEXTS,
-        metadatas=HanaTestUtils.METADATAS,
+        texts=HanaTestConstants.TEXTS,
+        metadatas=HanaTestConstants.METADATAS,
         embedding=embedding,
         table_name=table_name,
         specific_metadata_columns=["quality"],
@@ -1365,14 +1315,13 @@ def test_hanavector_keyword_search() -> None:
 def test_hanavector_keyword_search_unspecific_metadata_column(
     vectorDB,
 ) -> None:
-
-    vectorDB.add_texts(texts=HanaTestUtils.TEXTS, metadatas=HanaTestUtils.METADATAS)
+    vectorDB.add_texts(
+        texts=HanaTestConstants.TEXTS, metadatas=HanaTestConstants.METADATAS
+    )
 
     keyword = "good"
 
-    docs = vectorDB.similarity_search(
-        "hello", k=5, filter={"quality": keyword}
-    )
+    docs = vectorDB.similarity_search("hello", k=5, filter={"quality": keyword})
     assert len(docs) == 1
     assert "foo" in docs[0].page_content
 
