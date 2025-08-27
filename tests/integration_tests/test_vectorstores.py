@@ -278,7 +278,7 @@ def test_hanavector_similarity_search_simple(vectorDB) -> None:
 def test_hanavector_similarity_search_simple_invalid(vectorDB, k: int) -> None:
 
     with pytest.raises(ValueError, match="must be an integer greater than 0"):
-        vectorDB.similarity_search(HanaTestUtils.TEXTS[0], k)
+        vectorDB.similarity_search(HanaTestConstants.TEXTS[0], k)
         
 
 def test_hanavector_similarity_search_by_vector_simple(vectorDB) -> None:
@@ -302,12 +302,11 @@ def test_hanavector_similarity_search_by_vector_simple_invalid(
 ) -> None:
 
     with pytest.raises(ValueError, match="must be an integer greater than 0"):
-        vectorDB.similarity_search_by_vector(HanaTestUtils.TEXTS[0], k)
+        vectorDB.similarity_search_by_vector(HanaTestConstants.TEXTS[0], k)
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_simple_euclidean_distance(
-    texts: list[str],
 ) -> None:
     table_name = "TEST_TABLE_SEARCH_EUCLIDIAN"
 
@@ -606,7 +605,7 @@ def test_hanavector_max_marginal_relevance_search_invalid(
 ) -> None:
 
     with pytest.raises(ValueError, match=error_msg):
-        vectorDB.max_marginal_relevance_search(HanaTestUtils.TEXTS[0], k, fetch_k)
+        vectorDB.max_marginal_relevance_search(HanaTestConstants.TEXTS[0], k, fetch_k)
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
@@ -651,7 +650,7 @@ async def test_hanavector_max_marginal_relevance_search_async_invalid(
 ) -> None:
 
     with pytest.raises(ValueError, match=error_msg):
-        await vectorDB.amax_marginal_relevance_search(HanaTestUtils.TEXTS[0], k, fetch_k)
+        await vectorDB.amax_marginal_relevance_search(HanaTestConstants.TEXTS[0], k, fetch_k)
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")

@@ -144,7 +144,7 @@ def test_hanavector_similarity_search_with_metadata_filter(
 def test_hanavector_similarity_search_simple_invalid(vectorDB, k: int) -> None:
 
     with pytest.raises(ValueError, match="must be an integer greater than 0"):
-        vectorDB.similarity_search(HanaTestUtils.TEXTS[0], k)
+        vectorDB.similarity_search(HanaTestConstants.TEXTS[0], k)
 
 
 def test_hanavector_max_marginal_relevance_search(vectorDB) -> None:
@@ -155,8 +155,8 @@ def test_hanavector_max_marginal_relevance_search(vectorDB) -> None:
     )
 
     assert len(search_result) == 2
-    assert search_result[0].page_content == HanaTestUtils.TEXTS[0]
-    assert search_result[1].page_content != HanaTestUtils.TEXTS[0]
+    assert search_result[0].page_content == HanaTestConstants.TEXTS[0]
+    assert search_result[1].page_content != HanaTestConstants.TEXTS[0]
 
 
 @pytest.mark.parametrize(
@@ -172,7 +172,7 @@ def test_hanavector_max_marginal_relevance_search_invalid(
 ) -> None:
 
     with pytest.raises(ValueError, match=error_msg):
-        vectorDB.max_marginal_relevance_search(HanaTestUtils.TEXTS[0], k, fetch_k)
+        vectorDB.max_marginal_relevance_search(HanaTestConstants.TEXTS[0], k, fetch_k)
 
 
 @pytest.mark.parametrize(
@@ -188,4 +188,4 @@ async def test_hanavector_max_marginal_relevance_search_async_invalid(
 ) -> None:
 
     with pytest.raises(ValueError, match=error_msg):
-        await vectorDB.amax_marginal_relevance_search(HanaTestUtils.TEXTS[0], k, fetch_k)
+        await vectorDB.amax_marginal_relevance_search(HanaTestConstants.TEXTS[0], k, fetch_k)
