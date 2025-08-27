@@ -27,7 +27,7 @@ integration_test integration_tests:
 PYTHON_FILES=langchain_hana
 MYPY_CACHE=.mypy_cache
 lint format: PYTHON_FILES=langchain_hana
-lint_diff format_diff: PYTHON_FILES=$(shell git diff --relative=langchain-hana --name-only --diff-filter=d main | grep -E '\.py$$|\.ipynb$$')
+lint_diff format_diff: PYTHON_FILES=$(shell git diff  --name-only --diff-filter=d main | grep -E '\.py$$|\.ipynb$$')
 lint_package: PYTHON_FILES=langchain_hana
 lint_tests: PYTHON_FILES=tests
 lint_tests: MYPY_CACHE=.mypy_cache_test

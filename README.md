@@ -51,7 +51,7 @@ connection = dbapi.connect(
 # Initialize the HanaDB vector store
 vectorstore = HanaDB(
     connection=connection,
-    embeddings=internal_emb,  # or external_emb
+    embedding=internal_emb,  # or external_emb
     table_name="<table_name>"  # Optional: Default is "EMBEDDINGS"
 )
 
