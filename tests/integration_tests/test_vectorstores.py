@@ -276,10 +276,9 @@ def test_hanavector_similarity_search_simple(vectorDB) -> None:
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 @pytest.mark.parametrize("k", [0, -4])
 def test_hanavector_similarity_search_simple_invalid(vectorDB, k: int) -> None:
-
     with pytest.raises(ValueError, match="must be an integer greater than 0"):
         vectorDB.similarity_search(HanaTestConstants.TEXTS[0], k)
-        
+
 
 def test_hanavector_similarity_search_by_vector_simple(vectorDB) -> None:
     vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
@@ -300,14 +299,12 @@ def test_hanavector_similarity_search_by_vector_simple(vectorDB) -> None:
 def test_hanavector_similarity_search_by_vector_simple_invalid(
     vectorDB, k: int
 ) -> None:
-
     with pytest.raises(ValueError, match="must be an integer greater than 0"):
         vectorDB.similarity_search_by_vector(HanaTestConstants.TEXTS[0], k)
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_similarity_search_simple_euclidean_distance(
-) -> None:
+def test_hanavector_similarity_search_simple_euclidean_distance() -> None:
     table_name = "TEST_TABLE_SEARCH_EUCLIDIAN"
 
     # Check if table is created
@@ -603,7 +600,6 @@ def test_hanavector_max_marginal_relevance_search(vectorDB) -> None:
 def test_hanavector_max_marginal_relevance_search_invalid(
     vectorDB, k: int, fetch_k: int, error_msg: str
 ) -> None:
-
     with pytest.raises(ValueError, match=error_msg):
         vectorDB.max_marginal_relevance_search(HanaTestConstants.TEXTS[0], k, fetch_k)
 
@@ -648,9 +644,10 @@ async def test_hanavector_max_marginal_relevance_search_async(
 async def test_hanavector_max_marginal_relevance_search_async_invalid(
     vectorDB, k: int, fetch_k: int, error_msg: str
 ) -> None:
-
     with pytest.raises(ValueError, match=error_msg):
-        await vectorDB.amax_marginal_relevance_search(HanaTestConstants.TEXTS[0], k, fetch_k)
+        await vectorDB.amax_marginal_relevance_search(
+            HanaTestConstants.TEXTS[0], k, fetch_k
+        )
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")

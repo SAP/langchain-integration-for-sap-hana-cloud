@@ -142,7 +142,6 @@ def test_hanavector_similarity_search_with_metadata_filter(
 
 @pytest.mark.parametrize("k", [0, -4])
 def test_hanavector_similarity_search_simple_invalid(vectorDB, k: int) -> None:
-
     with pytest.raises(ValueError, match="must be an integer greater than 0"):
         vectorDB.similarity_search(HanaTestConstants.TEXTS[0], k)
 
@@ -170,7 +169,6 @@ def test_hanavector_max_marginal_relevance_search(vectorDB) -> None:
 def test_hanavector_max_marginal_relevance_search_invalid(
     vectorDB, k: int, fetch_k: int, error_msg: str
 ) -> None:
-
     with pytest.raises(ValueError, match=error_msg):
         vectorDB.max_marginal_relevance_search(HanaTestConstants.TEXTS[0], k, fetch_k)
 
@@ -186,6 +184,7 @@ def test_hanavector_max_marginal_relevance_search_invalid(
 async def test_hanavector_max_marginal_relevance_search_async_invalid(
     vectorDB, k: int, fetch_k: int, error_msg: str
 ) -> None:
-
     with pytest.raises(ValueError, match=error_msg):
-        await vectorDB.amax_marginal_relevance_search(HanaTestConstants.TEXTS[0], k, fetch_k)
+        await vectorDB.amax_marginal_relevance_search(
+            HanaTestConstants.TEXTS[0], k, fetch_k
+        )
