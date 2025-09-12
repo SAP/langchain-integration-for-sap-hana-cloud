@@ -110,6 +110,30 @@ def test_hanavector_add_texts(vectorDB) -> None:
     assert number_of_rows == number_of_texts
 
 
+def test_hanavector_add_texts_half_vector(vectorDB) -> None:
+    table_name = "TEST_TABLE_ADD_TEXTS_HALF_VECTOR"
+    vector_column_type = "HALF_VECTOR"
+    vectorDB = HanaDB(
+        connection=config.conn,
+        embedding=config.embedding,
+        table_name=table_name,
+        vector_column_type=vector_column_type,
+    )
+
+    vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
+
+    # check that embeddings have been created in the table
+    number_of_texts = len(HanaTestConstants.TEXTS)
+    number_of_rows = -1
+    sql_str = f"SELECT COUNT(*) FROM {table_name}"
+    cur = config.conn.cursor()
+    cur.execute(sql_str)
+    if cur.has_result_set():
+        rows = cur.fetchall()
+        number_of_rows = rows[0][0]
+    assert number_of_rows == number_of_texts
+
+
 def test_hanavector_similarity_search_with_metadata_filter(
     vectorDB,
 ) -> None:
@@ -140,6 +164,40 @@ def test_hanavector_similarity_search_with_metadata_filter(
     assert HanaTestConstants.METADATAS[1]["end"] == search_result[0].metadata["end"]
 
 
+def test_hanavector_similarity_search_simple(vectorDB) -> None:
+    vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
+
+    assert (
+        HanaTestConstants.TEXTS[0]
+        == vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 1)[0].page_content
+    )
+    assert (
+        HanaTestConstants.TEXTS[1]
+        != vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 1)[0].page_content
+    )
+
+
+def test_hanavector_similarity_search_half_vector(vectorDB) -> None:
+    table_name = "TEST_TABLE_SIMILARITY_SEARCH_HALF_VECTOR"
+    vector_column_type = "HALF_VECTOR"
+    vectorDB = HanaDB.from_texts(
+        connection=config.conn,
+        texts=HanaTestConstants.TEXTS,
+        embedding=config.embedding,
+        table_name=table_name,
+        vector_column_type=vector_column_type,
+    )
+
+    assert (
+        HanaTestConstants.TEXTS[0]
+        == vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 1)[0].page_content
+    )
+    assert (
+        HanaTestConstants.TEXTS[1]
+        != vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 1)[0].page_content
+    )
+
+
 @pytest.mark.parametrize("k", [0, -4])
 def test_hanavector_similarity_search_simple_invalid(vectorDB, k: int) -> None:
     with pytest.raises(ValueError, match="must be an integer greater than 0"):
@@ -148,6 +206,26 @@ def test_hanavector_similarity_search_simple_invalid(vectorDB, k: int) -> None:
 
 def test_hanavector_max_marginal_relevance_search(vectorDB) -> None:
     vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
+
+    search_result = vectorDB.max_marginal_relevance_search(
+        HanaTestConstants.TEXTS[0], k=2, fetch_k=20
+    )
+
+    assert len(search_result) == 2
+    assert search_result[0].page_content == HanaTestConstants.TEXTS[0]
+    assert search_result[1].page_content != HanaTestConstants.TEXTS[0]
+
+
+def test_hanavector_max_marginal_relevance_search_half_vector(vectorDB) -> None:
+    table_name = "TEST_TABLE_MMR_SEARCH_HALF_VECTOR"
+    vector_column_type = "HALF_VECTOR"
+    vectorDB = HanaDB.from_texts(
+        connection=config.conn,
+        texts=HanaTestConstants.TEXTS,
+        embedding=config.embedding,
+        table_name=table_name,
+        vector_column_type=vector_column_type,
+    )
 
     search_result = vectorDB.max_marginal_relevance_search(
         HanaTestConstants.TEXTS[0], k=2, fetch_k=20
