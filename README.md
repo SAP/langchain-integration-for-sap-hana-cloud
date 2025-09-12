@@ -56,7 +56,9 @@ vectorstore = HanaDB(
 )
 
 ```
+## Documentation
 
+For a detailed guide on using the package, please refer to [Langchain Hana Docs](https://python.langchain.com/docs/integrations/providers/sap/).
 
 ## Support, Feedback, Contributing
 
