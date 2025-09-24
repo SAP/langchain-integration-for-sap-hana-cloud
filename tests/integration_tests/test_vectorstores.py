@@ -70,12 +70,13 @@ def teardown_module(module):  # type: ignore[no-untyped-def]
     HanaTestUtils.drop_schema_if_exists(config.conn, config.schema_name)
 
 
-@pytest.fixture
-def vectorDB():
+@pytest.fixture(params=["REAL_VECTOR", "HALF_VECTOR"])
+def vectorDB(request):
     vectorDB = HanaDB(
         connection=config.conn,
         embedding=embedding,
         table_name=HanaTestConstants.TABLE_NAME,
+        vector_column_type=request.param,
     )
 
     yield vectorDB
@@ -236,31 +237,6 @@ def test_hanavector_add_texts(vectorDB) -> None:
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_add_texts_half_vector(vectorDB) -> None:
-    table_name = "TEST_TABLE_ADD_TEXTS_HALF_VECTOR"
-    vector_column_type = "HALF_VECTOR"
-    vectorDB = HanaDB(
-        connection=config.conn,
-        embedding=embedding,
-        table_name=table_name,
-        vector_column_type=vector_column_type,
-    )
-
-    vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
-
-    # check that embeddings have been created in the table
-    number_of_texts = len(HanaTestConstants.TEXTS)
-    number_of_rows = -1
-    sql_str = f"SELECT COUNT(*) FROM {table_name}"
-    cur = config.conn.cursor()
-    cur.execute(sql_str)
-    if cur.has_result_set():
-        rows = cur.fetchall()
-        number_of_rows = rows[0][0]
-    assert number_of_rows == number_of_texts
-
-
-@pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_from_texts() -> None:
     vectorDB = HanaDB.from_texts(
         connection=config.conn,
@@ -299,28 +275,6 @@ def test_hanavector_similarity_search_simple(vectorDB) -> None:
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_similarity_search_half_vector(vectorDB) -> None:
-    table_name = "TEST_TABLE_SIMILARITY_SEARCH_HALF_VECTOR"
-    vector_column_type = "HALF_VECTOR"
-    vectorDB = HanaDB.from_texts(
-        connection=config.conn,
-        texts=HanaTestConstants.TEXTS,
-        embedding=embedding,
-        table_name=table_name,
-        vector_column_type=vector_column_type,
-    )
-
-    assert (
-        HanaTestConstants.TEXTS[0]
-        == vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 1)[0].page_content
-    )
-    assert (
-        HanaTestConstants.TEXTS[1]
-        != vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 1)[0].page_content
-    )
-
-
-@pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 @pytest.mark.parametrize("k", [0, -4])
 def test_hanavector_similarity_search_simple_invalid(vectorDB, k: int) -> None:
     with pytest.raises(ValueError, match="must be an integer greater than 0"):
@@ -330,29 +284,6 @@ def test_hanavector_similarity_search_simple_invalid(vectorDB, k: int) -> None:
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_by_vector_simple(vectorDB) -> None:
     vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
-
-    vector = embedding.embed_query(HanaTestConstants.TEXTS[0])
-    assert (
-        HanaTestConstants.TEXTS[0]
-        == vectorDB.similarity_search_by_vector(vector, 1)[0].page_content
-    )
-    assert (
-        HanaTestConstants.TEXTS[1]
-        != vectorDB.similarity_search_by_vector(vector, 1)[0].page_content
-    )
-
-
-@pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_similarity_search_by_vector_half_vector(vectorDB) -> None:
-    table_name = "TEST_TABLE_SIMILARITY_SEARCH_VECTOR_HALF_VECTOR"
-    vector_column_type = "HALF_VECTOR"
-    vectorDB = HanaDB.from_texts(
-        connection=config.conn,
-        texts=HanaTestConstants.TEXTS,
-        embedding=embedding,
-        table_name=table_name,
-        vector_column_type=vector_column_type,
-    )
 
     vector = embedding.embed_query(HanaTestConstants.TEXTS[0])
     assert (
@@ -660,27 +591,6 @@ def test_hanavector_max_marginal_relevance_search(vectorDB) -> None:
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_max_marginal_relevance_search_half_vector(vectorDB) -> None:
-    table_name = "TEST_TABLE_MMR_SEARCH_HALF_VECTOR"
-    vector_column_type = "HALF_VECTOR"
-    vectorDB = HanaDB.from_texts(
-        connection=config.conn,
-        texts=HanaTestConstants.TEXTS,
-        embedding=embedding,
-        table_name=table_name,
-        vector_column_type=vector_column_type,
-    )
-
-    search_result = vectorDB.max_marginal_relevance_search(
-        HanaTestConstants.TEXTS[0], k=2, fetch_k=20
-    )
-
-    assert len(search_result) == 2
-    assert search_result[0].page_content == HanaTestConstants.TEXTS[0]
-    assert search_result[1].page_content != HanaTestConstants.TEXTS[0]
-
-
-@pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 @pytest.mark.parametrize(
     "k, fetch_k, error_msg",
     [
@@ -699,27 +609,6 @@ def test_hanavector_max_marginal_relevance_search_invalid(
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_max_marginal_relevance_search_vector(vectorDB) -> None:
     vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
-
-    search_result = vectorDB.max_marginal_relevance_search_by_vector(
-        embedding.embed_query(HanaTestConstants.TEXTS[0]), k=2, fetch_k=20
-    )
-
-    assert len(search_result) == 2
-    assert search_result[0].page_content == HanaTestConstants.TEXTS[0]
-    assert search_result[1].page_content != HanaTestConstants.TEXTS[0]
-
-
-@pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_max_marginal_relevance_search_vector_half_vector(vectorDB) -> None:
-    table_name = "TEST_TABLE_MMR_SEARCH_VECTOR_HALF_VECTOR"
-    vector_column_type = "HALF_VECTOR"
-    vectorDB = HanaDB.from_texts(
-        connection=config.conn,
-        texts=HanaTestConstants.TEXTS,
-        embedding=embedding,
-        table_name=table_name,
-        vector_column_type=vector_column_type,
-    )
 
     search_result = vectorDB.max_marginal_relevance_search_by_vector(
         embedding.embed_query(HanaTestConstants.TEXTS[0]), k=2, fetch_k=20
