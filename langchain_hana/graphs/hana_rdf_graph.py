@@ -72,7 +72,7 @@ class HanaRdfGraph:
     def __init__(
         self,
         connection: dbapi.Connection,
-        graph_uri: Optional[str],  # use default graph if None was provided as graph_uri
+        graph_uri: Optional[str] = "DEFAULT",  # use default graph if None was provided as graph_uri
         ontology_query: Optional[str] = None,
         ontology_uri: Optional[str] = None,
         ontology_local_file: Optional[str] = None,
@@ -80,9 +80,8 @@ class HanaRdfGraph:
         auto_extract_ontology: bool = False,
     ) -> None:
         self.connection = connection
-        self.graph_uri = graph_uri if graph_uri else "DEFAULT"
+        self.graph_uri = graph_uri   #if graph_uri else "DEFAULT"
 
-        self._check_connectivity()
         self.refresh_schema(
             ontology_query,
             ontology_uri,
@@ -152,7 +151,7 @@ class HanaRdfGraph:
         cursor = self.connection.cursor()
         try:
             result = cursor.callproc(
-                "SYS.SPARQL_EXECUTE", (query, request_headers, "?", None)
+                "SYS.SPARQL_EXECUTE", (query, request_headers, "?", "?")
             )
             response = result[2]
         except dbapi.Error as db_error:
@@ -165,19 +164,6 @@ class HanaRdfGraph:
             cursor.close()
 
         return response
-
-    def _check_connectivity(self) -> None:
-        """
-        Executes a simple `ASK` query to check connectivity
-        """
-        from_clause = (
-            f" FROM <{self.graph_uri}> " if self.graph_uri != "DEFAULT" else ""
-        )
-        response = self.query(
-            f"ASK {from_clause} {{ ?s ?p ?o }}", inject_from_clause=False
-        )
-        if response == "false":
-            raise ValueError(f"There is no named graph with '{self.graph_uri}'")
 
     def _load_ontology_schema_graph_from_query(self, ontology_query) -> rdflib.Graph:
         """
@@ -261,8 +247,8 @@ class HanaRdfGraph:
         else:
             if ontology_uri:
                 ontology_query = (
-                    f"CONSTRUCT {{?s ?o ?p}} FROM <{ontology_uri}> WHERE"
-                    + "{?s ?o ?p .}"
+                    f"CONSTRUCT {{?s ?p ?o}} FROM <{ontology_uri}> WHERE"
+                    + "{?s ?p ?o .}"
                 )
             ontology_schema_graph = self._load_ontology_schema_graph_from_query(
                 ontology_query
@@ -309,7 +295,7 @@ class HanaRdfGraph:
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
         PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
         CONSTRUCT {{ ?cls rdf:type owl:Class . ?cls rdfs:label ?clsLabel . ?rel rdf:type ?propertyType . ?rel rdfs:label ?relLabel . ?rel rdfs:domain ?domain . ?rel rdfs:range ?range .}}
-        FROM <{graph_uri}>
+        {f"FROM <{graph_uri}>" if graph_uri and graph_uri != "DEFAULT" else ""}
         WHERE {{ # get properties
             {{SELECT DISTINCT ?domain ?rel ?relLabel ?propertyType ?range
             WHERE {{
