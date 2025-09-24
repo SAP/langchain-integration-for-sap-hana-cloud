@@ -148,7 +148,7 @@ def test_hana_rdf_graph_creation_with_ontology_uri(ontology_graph):
 
     assert ontology_graph is not None
     assert isinstance(ontology_graph, HanaRdfGraph)
-    assert ontology_graph.schema.strip() == expected_schema.strip()
+    assert ontology_graph.get_schema.strip() == expected_schema.strip()
 
 def test_hana_graph_creation_with_ontology_file():
     """Test graph creation with ontology file."""
@@ -163,7 +163,7 @@ def test_hana_graph_creation_with_ontology_file():
 
     assert graph is not None
     assert isinstance(graph, HanaRdfGraph)
-    assert graph.schema is not None
+    assert graph.get_schema is not None
 
 def test_hana_rdf_graph_query(example_graph):
     """Test graph query."""
