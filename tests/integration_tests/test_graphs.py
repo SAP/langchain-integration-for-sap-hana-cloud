@@ -6,6 +6,7 @@ from pathlib import Path
 import textwrap
 from hdbcli import dbapi
 from langchain_hana.graphs import HanaRdfGraph
+from tests.integration_tests.hana_test_utils import HanaTestUtils
 
 class Config:
     def __init__(self):  # type: ignore[no-untyped-def]
@@ -13,23 +14,6 @@ class Config:
 
 config = Config()
         
-
-def execute_sparql_query(connection, query: str, request_headers: str):
-    """Execute a SPARQL query."""
-    cursor = connection.cursor()
-    try:
-        result = cursor.callproc(
-            "SYS.SPARQL_EXECUTE", (query, request_headers, "?", "?")
-        )
-        response = result[2]
-        return response
-    except dbapi.Error as db_error:
-        raise RuntimeError(
-            f'The database query "{query}" failed: '
-            f'{db_error.errortext.split("; Server Connection")[0]}'
-        )
-    finally:
-        cursor.close()
 
 def setup_module(module):  # type: ignore[no-untyped-def]
     
@@ -66,7 +50,7 @@ def example_graph():
         }}
     }}
     """
-    execute_sparql_query(config.conn, query, '')
+    HanaTestUtils.execute_sparql_query(config.conn, query, '')
 
     graph = HanaRdfGraph(
         connection=config.conn,
@@ -78,7 +62,7 @@ def example_graph():
     query = f"""
     DROP GRAPH <{graph_uri}>
     """
-    execute_sparql_query(config.conn, query, '')
+    HanaTestUtils.execute_sparql_query(config.conn, query, '')
 
 @pytest.fixture
 def ontology_graph():
@@ -111,7 +95,7 @@ def ontology_graph():
     }}
     }}
     """
-    execute_sparql_query(config.conn, query, '')
+    HanaTestUtils.execute_sparql_query(config.conn, query, '')
 
     graph = HanaRdfGraph(
         connection=config.conn,
@@ -124,7 +108,7 @@ def ontology_graph():
     DROP GRAPH <{ontology_uri}>
     """
 
-    execute_sparql_query(config.conn, query, '')
+    HanaTestUtils.execute_sparql_query(config.conn, query, '')
 
 
 def test_hana_rdf_graph_creation(default_graph):
