@@ -393,7 +393,7 @@ class HanaDB(VectorStore):
             str: The expression wrapped with the appropriate conversion function.
         """
         if self.vector_column_type in VECTOR_COLUMN_SQL_TYPES:
-            return f"TO_{self.vector_column_type}('{expr}')"
+            return f"TO_{self.vector_column_type}({expr})"
         else:
             raise ValueError(f"Unsupported vector type: {self.vector_column_type}")
 
@@ -753,7 +753,7 @@ class HanaDB(VectorStore):
             - list[float]: The document's embedding vector
         """
         # Use the appropriate vector conversion function
-        embedding_expr = self._convert_to_target_vector_type(expr=str(embedding))
+        embedding_expr = self._convert_to_target_vector_type(expr=f"'{str(embedding)}'")
 
         return self._similarity_search_with_score_and_vector(
             embedding_expr, k=k, filter=filter
