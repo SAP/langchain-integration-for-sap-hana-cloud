@@ -74,7 +74,7 @@ class HanaRdfGraph:
         connection: dbapi.Connection,
         graph_uri: Optional[
             str
-        ] = "DEFAULT",  # use default graph if None was provided as graph_uri
+        ] = "",  # use default graph if None was provided as graph_uri
         ontology_query: Optional[str] = None,
         ontology_uri: Optional[str] = None,
         ontology_local_file: Optional[str] = None,
@@ -82,7 +82,7 @@ class HanaRdfGraph:
         auto_extract_ontology: bool = False,
     ) -> None:
         self.connection = connection
-        self.graph_uri = graph_uri  # if graph_uri else "DEFAULT"
+        self.graph_uri = graph_uri if graph_uri else "DEFAULT"
 
         self.refresh_schema(
             ontology_query,

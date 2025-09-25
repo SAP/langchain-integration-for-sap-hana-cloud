@@ -114,13 +114,13 @@ def ontology_graph():
 def test_hana_rdf_graph_creation(default_graph):
     """Test graph creation."""
 
-    assert default_graph is not None
+    assert default_graph
     assert isinstance(default_graph, HanaRdfGraph)
 
 def test_hana_rdf_graph_creation_with_graph_uri(example_graph):
     """Test graph creation with graph URI."""
 
-    assert example_graph is not None
+    assert example_graph
     assert isinstance(example_graph, HanaRdfGraph)
     assert example_graph.graph_uri == "http://example.com/graph"
 
@@ -146,7 +146,7 @@ def test_hana_rdf_graph_creation_with_ontology_uri(ontology_graph):
         rdfs:label "Puppet" .
     """)
 
-    assert ontology_graph is not None
+    assert ontology_graph
     assert isinstance(ontology_graph, HanaRdfGraph)
     assert ontology_graph.get_schema.strip() == expected_schema.strip()
 
@@ -161,7 +161,7 @@ def test_hana_graph_creation_with_ontology_file():
         ontology_local_file_format="turtle"
     )
 
-    assert graph is not None
+    assert graph
     assert isinstance(graph, HanaRdfGraph)
     assert graph.get_schema is not None
 
