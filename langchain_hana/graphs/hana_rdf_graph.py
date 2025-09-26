@@ -34,7 +34,7 @@ class HanaRdfGraph:
         ontology_local_file (Optional[str]): Path to a local ontology file to load.
         ontology_local_file_format (Optional[str]): RDF format of the local file
             (e.g., 'turtle').
-        graph_uri (Optional[str]): The URI of the target graph; uses 'DEFAULT' if None.
+        graph_uri (Optional[str]): The URI of the target graph; uses the DEFAULT graph if graph_uri in (None, "", "DEFAULT").
         auto_extract_ontology (bool): If True and no schema source provided,
             automatically extract a generic ontology via SPARQL.
 
@@ -74,7 +74,7 @@ class HanaRdfGraph:
         connection: dbapi.Connection,
         graph_uri: Optional[
             str
-        ] = "",  # use default graph if None was provided as graph_uri
+        ] = "",  # use default graph if graph_uri in (None, "", "DEFAULT")
         ontology_query: Optional[str] = None,
         ontology_uri: Optional[str] = None,
         ontology_local_file: Optional[str] = None,
@@ -102,7 +102,6 @@ class HanaRdfGraph:
         Injects a FROM clause into the SPARQL query if one is not already present..
 
         If self.graph_uri is provided, it inserts FROM <graph_uri>.
-        If self.graph_uri is None, it inserts FROM DEFAULT.
 
         Args:
             query: The SPARQL query string.
@@ -287,10 +286,7 @@ class HanaRdfGraph:
     def _get_generic_ontology_query(self):
         """
         Return a generic SPARQL CONSTRUCT that extracts
-            a minimal OWL schema from the graph.
-
-        Args:
-            graph_uri: URI of the named graph to query.
+            a minimal OWL schema from the graph given by self.graph_uri.
 
         Returns:
             A SPARQL CONSTRUCT query string.
