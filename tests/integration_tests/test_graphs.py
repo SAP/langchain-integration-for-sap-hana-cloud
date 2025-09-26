@@ -38,6 +38,14 @@ def default_graph():
         auto_extract_ontology=True,
     )
 
+@pytest.fixture(params=["DEFAULT", None])
+def default_graph_with_graph_uri(request):
+    return HanaRdfGraph(
+        connection=config.conn,
+        graph_uri=request.param,
+        auto_extract_ontology=True,
+    )
+
 @pytest.fixture
 def example_graph():
     graph_uri = "http://example.com/graph"
@@ -111,11 +119,18 @@ def ontology_graph():
     HanaTestUtils.execute_sparql_query(config.conn, query, '')
 
 
-def test_hana_rdf_graph_creation(default_graph):
-    """Test graph creation."""
+def test_hana_rdf_default_graph_creation(default_graph):
+    """Test default graph creation with no graph uri given."""
 
     assert default_graph
     assert isinstance(default_graph, HanaRdfGraph)
+
+def test_hana_rdf_default_graph_creation_with_graph_uri(default_graph_with_graph_uri):
+    """Test default graph creation with default graph URI."""
+
+    assert default_graph_with_graph_uri
+    assert isinstance(default_graph_with_graph_uri, HanaRdfGraph)
+    assert default_graph_with_graph_uri.graph_uri == ""
 
 def test_hana_rdf_graph_creation_with_graph_uri(example_graph):
     """Test graph creation with graph URI."""

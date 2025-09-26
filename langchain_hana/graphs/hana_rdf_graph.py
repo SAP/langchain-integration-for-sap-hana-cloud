@@ -82,7 +82,12 @@ class HanaRdfGraph:
         auto_extract_ontology: bool = False,
     ) -> None:
         self.connection = connection
-        self.graph_uri = graph_uri if graph_uri else "DEFAULT"
+
+        # Avoid FROM <DEFAULT> and handle None
+        if not graph_uri or graph_uri.upper() == "DEFAULT":
+            graph_uri = ""
+
+        self.graph_uri = graph_uri
 
         self.refresh_schema(
             ontology_query,
@@ -109,10 +114,10 @@ class HanaRdfGraph:
             ValueError: If the query does not contain a 'WHERE' clause.
         """
         # Determine the appropriate FROM clause.
-        if self.graph_uri is None or self.graph_uri.upper() == "DEFAULT":
-            from_clause = "FROM DEFAULT"
-        else:
+        if self.graph_uri:
             from_clause = f"FROM <{self.graph_uri}>"
+        else:
+            from_clause = "FROM DEFAULT"
 
         # Check if a FROM clause is already present.
         from_pattern = re.compile(r"\bFROM\b", flags=re.IGNORECASE)
@@ -147,7 +152,7 @@ class HanaRdfGraph:
             f"Accept: {content_type}\r\nContent-Type: application/sparql-query"
         )
 
-        if inject_from_clause and self.graph_uri:
+        if inject_from_clause:
             query = self.inject_from_clause(query)
 
         cursor = self.connection.cursor()
@@ -227,7 +232,7 @@ class HanaRdfGraph:
         )
 
         if schema_sources == 0 and auto_extract_ontology:
-            ontology_query = HanaRdfGraph.get_generic_ontology_query(self.graph_uri)
+            ontology_query = self._get_generic_ontology_query()
             schema_sources = 1
 
         if schema_sources > 1:
@@ -279,8 +284,7 @@ class HanaRdfGraph:
                 "Invalid query type. Only CONSTRUCT queries are supported for schema."
             )
 
-    @staticmethod
-    def get_generic_ontology_query(graph_uri):
+    def _get_generic_ontology_query(self):
         """
         Return a generic SPARQL CONSTRUCT that extracts
             a minimal OWL schema from the graph.
@@ -297,7 +301,7 @@ class HanaRdfGraph:
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
         PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
         CONSTRUCT {{ ?cls rdf:type owl:Class . ?cls rdfs:label ?clsLabel . ?rel rdf:type ?propertyType . ?rel rdfs:label ?relLabel . ?rel rdfs:domain ?domain . ?rel rdfs:range ?range .}}
-        {f"FROM <{graph_uri}>" if graph_uri and graph_uri != "DEFAULT" else ""}
+        {f"FROM <{self.graph_uri}>" if self.graph_uri else ""}
         WHERE {{ # get properties
             {{SELECT DISTINCT ?domain ?rel ?relLabel ?propertyType ?range
             WHERE {{
