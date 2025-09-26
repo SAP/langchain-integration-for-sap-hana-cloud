@@ -34,7 +34,7 @@ class HanaRdfGraph:
         ontology_local_file (Optional[str]): Path to a local ontology file to load.
         ontology_local_file_format (Optional[str]): RDF format of the local file
             (e.g., 'turtle').
-        graph_uri (Optional[str]): The URI of the target graph; uses 'DEFAULT' if None.
+        graph_uri (Optional[str]): The URI of the target graph; uses the DEFAULT graph if graph_uri in (None, "", "DEFAULT").
         auto_extract_ontology (bool): If True and no schema source provided,
             automatically extract a generic ontology via SPARQL.
 
@@ -72,7 +72,9 @@ class HanaRdfGraph:
     def __init__(
         self,
         connection: dbapi.Connection,
-        graph_uri: Optional[str],  # use default graph if None was provided as graph_uri
+        graph_uri: Optional[
+            str
+        ] = "",  # use default graph if graph_uri in (None, "", "DEFAULT")
         ontology_query: Optional[str] = None,
         ontology_uri: Optional[str] = None,
         ontology_local_file: Optional[str] = None,
@@ -80,9 +82,13 @@ class HanaRdfGraph:
         auto_extract_ontology: bool = False,
     ) -> None:
         self.connection = connection
-        self.graph_uri = graph_uri if graph_uri else "DEFAULT"
 
-        self._check_connectivity()
+        # Avoid FROM <DEFAULT> and handle None
+        if not graph_uri or graph_uri.upper() == "DEFAULT":
+            graph_uri = ""
+
+        self.graph_uri = graph_uri
+
         self.refresh_schema(
             ontology_query,
             ontology_uri,
@@ -96,7 +102,6 @@ class HanaRdfGraph:
         Injects a FROM clause into the SPARQL query if one is not already present..
 
         If self.graph_uri is provided, it inserts FROM <graph_uri>.
-        If self.graph_uri is None, it inserts FROM DEFAULT.
 
         Args:
             query: The SPARQL query string.
@@ -108,10 +113,10 @@ class HanaRdfGraph:
             ValueError: If the query does not contain a 'WHERE' clause.
         """
         # Determine the appropriate FROM clause.
-        if self.graph_uri is None or self.graph_uri.upper() == "DEFAULT":
-            from_clause = "FROM DEFAULT"
-        else:
+        if self.graph_uri:
             from_clause = f"FROM <{self.graph_uri}>"
+        else:
+            from_clause = ""
 
         # Check if a FROM clause is already present.
         from_pattern = re.compile(r"\bFROM\b", flags=re.IGNORECASE)
@@ -146,13 +151,13 @@ class HanaRdfGraph:
             f"Accept: {content_type}\r\nContent-Type: application/sparql-query"
         )
 
-        if inject_from_clause and self.graph_uri:
+        if inject_from_clause:
             query = self.inject_from_clause(query)
 
         cursor = self.connection.cursor()
         try:
             result = cursor.callproc(
-                "SYS.SPARQL_EXECUTE", (query, request_headers, "?", None)
+                "SYS.SPARQL_EXECUTE", (query, request_headers, "?", "?")
             )
             response = result[2]
         except dbapi.Error as db_error:
@@ -165,19 +170,6 @@ class HanaRdfGraph:
             cursor.close()
 
         return response
-
-    def _check_connectivity(self) -> None:
-        """
-        Executes a simple `ASK` query to check connectivity
-        """
-        from_clause = (
-            f" FROM <{self.graph_uri}> " if self.graph_uri != "DEFAULT" else ""
-        )
-        response = self.query(
-            f"ASK {from_clause} {{ ?s ?p ?o }}", inject_from_clause=False
-        )
-        if response == "false":
-            raise ValueError(f"There is no named graph with '{self.graph_uri}'")
 
     def _load_ontology_schema_graph_from_query(self, ontology_query) -> rdflib.Graph:
         """
@@ -239,7 +231,7 @@ class HanaRdfGraph:
         )
 
         if schema_sources == 0 and auto_extract_ontology:
-            ontology_query = HanaRdfGraph.get_generic_ontology_query(self.graph_uri)
+            ontology_query = self._get_generic_ontology_query()
             schema_sources = 1
 
         if schema_sources > 1:
@@ -261,8 +253,8 @@ class HanaRdfGraph:
         else:
             if ontology_uri:
                 ontology_query = (
-                    f"CONSTRUCT {{?s ?o ?p}} FROM <{ontology_uri}> WHERE"
-                    + "{?s ?o ?p .}"
+                    f"CONSTRUCT {{?s ?p ?o}} FROM <{ontology_uri}> WHERE"
+                    + "{?s ?p ?o .}"
                 )
             ontology_schema_graph = self._load_ontology_schema_graph_from_query(
                 ontology_query
@@ -291,14 +283,10 @@ class HanaRdfGraph:
                 "Invalid query type. Only CONSTRUCT queries are supported for schema."
             )
 
-    @staticmethod
-    def get_generic_ontology_query(graph_uri):
+    def _get_generic_ontology_query(self):
         """
         Return a generic SPARQL CONSTRUCT that extracts
-            a minimal OWL schema from the graph.
-
-        Args:
-            graph_uri: URI of the named graph to query.
+            a minimal OWL schema from the graph given by self.graph_uri.
 
         Returns:
             A SPARQL CONSTRUCT query string.
@@ -309,7 +297,7 @@ class HanaRdfGraph:
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
         PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
         CONSTRUCT {{ ?cls rdf:type owl:Class . ?cls rdfs:label ?clsLabel . ?rel rdf:type ?propertyType . ?rel rdfs:label ?relLabel . ?rel rdfs:domain ?domain . ?rel rdfs:range ?range .}}
-        FROM <{graph_uri}>
+        {f"FROM <{self.graph_uri}>" if self.graph_uri else ""}
         WHERE {{ # get properties
             {{SELECT DISTINCT ?domain ?rel ?relLabel ?propertyType ?range
             WHERE {{

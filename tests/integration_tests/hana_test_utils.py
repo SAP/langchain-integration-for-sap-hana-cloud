@@ -78,3 +78,21 @@ class HanaTestUtils:
             raise RuntimeError(f"Error dropping table {table_name}: {e}")
         finally:
             cur.close()
+
+    @staticmethod
+    def execute_sparql_query(connection, query: str, request_headers: str):
+        """Execute a SPARQL query."""
+        cursor = connection.cursor()
+        try:
+            result = cursor.callproc(
+                "SYS.SPARQL_EXECUTE", (query, request_headers, "?", "?")
+            )
+            response = result[2]
+            return response
+        except dbapi.Error as db_error:
+            raise RuntimeError(
+                f'The database query "{query}" failed: '
+                f'{db_error.errortext.split("; Server Connection")[0]}'
+            )
+        finally:
+            cursor.close()
