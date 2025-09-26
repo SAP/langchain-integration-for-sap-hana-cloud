@@ -96,4 +96,3 @@ class HanaTestUtils:
             )
         finally:
             cursor.close()
-
