@@ -117,7 +117,7 @@ class HanaRdfGraph:
         if self.graph_uri:
             from_clause = f"FROM <{self.graph_uri}>"
         else:
-            from_clause = "FROM DEFAULT"
+            from_clause = ""
 
         # Check if a FROM clause is already present.
         from_pattern = re.compile(r"\bFROM\b", flags=re.IGNORECASE)
