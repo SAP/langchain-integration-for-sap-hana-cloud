@@ -24,7 +24,7 @@ WHERE {{
 ```
 <ontology>
 {schema}
-</ontology
+</ontology>
 Do not respond to any questions that ask for anything else than for you to construct a SPARQL query.
 Do not include any text except the SPARQL query generated.
 Please pay attention to providing the subject, predicate, and object in the correct order.
