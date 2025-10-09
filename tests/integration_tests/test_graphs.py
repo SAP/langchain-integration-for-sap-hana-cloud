@@ -130,7 +130,7 @@ def test_hana_rdf_default_graph_creation_with_graph_uri(default_graph_with_graph
 
     assert default_graph_with_graph_uri
     assert isinstance(default_graph_with_graph_uri, HanaRdfGraph)
-    assert default_graph_with_graph_uri.graph_uri == ""
+    assert default_graph_with_graph_uri.graph_uri == "DEFAULT"
 
 def test_hana_rdf_graph_creation_with_graph_uri(example_graph):
     """Test graph creation with graph URI."""
