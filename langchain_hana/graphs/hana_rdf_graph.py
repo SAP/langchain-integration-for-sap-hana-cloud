@@ -83,11 +83,11 @@ class HanaRdfGraph:
     ) -> None:
         self.connection = connection
 
-        # Avoid FROM <DEFAULT> and handle None
+        # If graph_uri is None, empty, or "DEFAULT", use the DEFAULT graph.
         if not graph_uri or graph_uri.upper() == "DEFAULT":
-            graph_uri = ""
-
-        self.graph_uri = graph_uri
+            self.from_clause = "FROM DEFAULT"
+        else:
+            self.from_clause = f"FROM <{graph_uri}>"
 
         self.refresh_schema(
             ontology_query,
@@ -112,11 +112,6 @@ class HanaRdfGraph:
         Raises:
             ValueError: If the query does not contain a 'WHERE' clause.
         """
-        # Determine the appropriate FROM clause.
-        if self.graph_uri:
-            from_clause = f"FROM <{self.graph_uri}>"
-        else:
-            from_clause = ""
 
         # Check if a FROM clause is already present.
         from_pattern = re.compile(r"\bFROM\b", flags=re.IGNORECASE)
@@ -130,7 +125,7 @@ class HanaRdfGraph:
         if match:
             index = match.start()
             # Insert the FROM clause before the matched WHERE clause.
-            query = query[:index] + f"\n{from_clause}\n" + query[index:]
+            query = query[:index] + f"\n{self.from_clause}\n" + query[index:]
         else:
             raise ValueError("The SPARQL query does not contain a 'WHERE' clause.")
 
@@ -277,7 +272,12 @@ class HanaRdfGraph:
         if not isinstance(construct_query, str):
             raise TypeError("Schema query must be provided as string.")
 
-        parsed_query = prepareQuery(construct_query)
+        # We are using prepareQuery from rdflib.plugins.sparql to parse the query.
+        # HANA deviates from the standard SPARQL specification where FROM DEFAULT is a valid clause.
+        # To handle this, we remove 'FROM DEFAULT' before parsing.
+        # In the standard specification, when no FROM clause is given, the default graph is used. 
+        query_without_from_default = re.sub(r'\bfrom\s+default\b', '', construct_query, flags=re.IGNORECASE)
+        parsed_query = prepareQuery(query_without_from_default)
         if parsed_query.algebra.name != "ConstructQuery":
             raise ValueError(
                 "Invalid query type. Only CONSTRUCT queries are supported for schema."
@@ -297,7 +297,7 @@ class HanaRdfGraph:
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
         PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
         CONSTRUCT {{ ?cls rdf:type owl:Class . ?cls rdfs:label ?clsLabel . ?rel rdf:type ?propertyType . ?rel rdfs:label ?relLabel . ?rel rdfs:domain ?domain . ?rel rdfs:range ?range .}}
-        {f"FROM <{self.graph_uri}>" if self.graph_uri else ""}
+        {self.from_clause}
         WHERE {{ # get properties
             {{SELECT DISTINCT ?domain ?rel ?relLabel ?propertyType ?range
             WHERE {{
