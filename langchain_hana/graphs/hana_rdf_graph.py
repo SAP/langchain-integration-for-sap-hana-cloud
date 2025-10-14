@@ -255,7 +255,7 @@ class HanaRdfGraph:
                 ontology_query
             )
 
-        self.schema = ontology_schema_graph.serialize(format="turtle")
+        self.schema = ontology_schema_graph
 
     @staticmethod
     def _validate_construct_query(construct_query: str) -> None:
