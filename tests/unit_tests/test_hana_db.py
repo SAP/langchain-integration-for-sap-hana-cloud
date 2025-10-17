@@ -3,7 +3,7 @@
 import pytest
 
 from langchain_hana.utils import _validate_k, _validate_k_and_fetch_k
-from langchain_hana.vectorstores import HanaDB
+from langchain_hana.vectorstores.hana_db import HanaDB
 
 
 def test_int_sanitation_with_illegal_value() -> None:

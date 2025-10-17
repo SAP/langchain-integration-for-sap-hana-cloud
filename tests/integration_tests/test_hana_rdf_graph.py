@@ -7,7 +7,7 @@ from rdflib.compare import isomorphic
 from pathlib import Path
 import textwrap
 from hdbcli import dbapi
-from langchain_hana.graphs import HanaRdfGraph
+from langchain_hana import HanaRdfGraph
 from tests.integration_tests.hana_test_utils import HanaTestUtils
 
 class Config:
