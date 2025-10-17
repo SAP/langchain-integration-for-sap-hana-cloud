@@ -5,8 +5,8 @@ import os
 import pytest
 from hdbcli import dbapi
 
-from langchain_hana.embeddings import HanaInternalEmbeddings
-from langchain_hana.vectorstores import HanaDB
+from langchain_hana import HanaInternalEmbeddings
+from langchain_hana import HanaDB
 from tests.integration_tests.hana_test_constants import HanaTestConstants
 from tests.integration_tests.hana_test_utils import HanaTestUtils
 

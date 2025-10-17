@@ -1,3 +1,3 @@
-from .graph_qa.sparql_qa_chain import HanaSparqlQAChain
+from .graph_qa import HanaSparqlQAChain
 
 __all__ = ["HanaSparqlQAChain"]
