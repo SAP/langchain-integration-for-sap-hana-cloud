@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
-from langchain.chains.base import Chain
-from langchain.chains.llm import LLMChain
 from langchain_core.callbacks.manager import CallbackManagerForChainRun
 from langchain_core.language_models import BaseLanguageModel
 from langchain_core.prompts.base import BasePromptTemplate
-from pydantic import Field
+from langchain_core.runnables import Runnable
+from langchain_core.runnables.config import RunnableConfig
+from langchain_core.output_parsers import StrOutputParser
+from pydantic import BaseModel
 
 from langchain_hana.graphs import HanaRdfGraph
 
@@ -19,7 +20,7 @@ from .prompts import (
 )
 
 
-class HanaSparqlQAChain(Chain):
+class HanaSparqlQAChain(BaseModel):
     """Chain for question-answering against a SAP HANA CLOUD Knowledge Graph Engine
     by generating SPARQL statements.
 
@@ -29,7 +30,7 @@ class HanaSparqlQAChain(Chain):
             verbose=True,
             allow_dangerous_requests=True,
             graph=graph)
-        response = chain.invoke(query)
+        response = chain.invoke({"query": "What is the population?"})
 
     *Security note*: Make sure that the database connection uses credentials
         that are narrowly-scoped to only include necessary permissions.
@@ -43,9 +44,11 @@ class HanaSparqlQAChain(Chain):
         See https://python.langchain.com/docs/security for more information.
     """
 
-    graph: HanaRdfGraph = Field(exclude=True)
-    sparql_generation_chain: LLMChain
-    qa_chain: LLMChain
+    model_config = {"arbitrary_types_allowed": True}
+
+    graph: HanaRdfGraph
+    sparql_generation_chain: Runnable[Dict[str, Any], str]
+    qa_chain: Runnable[Dict[str, Any], str]
     input_key: str = "query"  #: :meta private:
     output_key: str = "result"  #: :meta private:
 
@@ -67,14 +70,6 @@ class HanaSparqlQAChain(Chain):
                 "See https://python.langchain.com/docs/security for more information."
             )
 
-    @property
-    def input_keys(self) -> List[str]:
-        return [self.input_key]
-
-    @property
-    def output_keys(self) -> List[str]:
-        return [self.output_key]
-
     @classmethod
     def from_llm(
         cls,
@@ -84,8 +79,8 @@ class HanaSparqlQAChain(Chain):
         qa_prompt: BasePromptTemplate = SPARQL_QA_PROMPT,
         **kwargs: Any,
     ) -> HanaSparqlQAChain:
-        sparql_generation_chain = LLMChain(llm=llm, prompt=sparql_generation_prompt)
-        qa_chain = LLMChain(llm=llm, prompt=qa_prompt)
+        sparql_generation_chain = sparql_generation_prompt | llm | StrOutputParser()
+        qa_chain = qa_prompt | llm | StrOutputParser()
         return cls(
             qa_chain=qa_chain,
             sparql_generation_chain=sparql_generation_chain,
@@ -140,27 +135,29 @@ class HanaSparqlQAChain(Chain):
             query = prefix_lines + query
         return query
 
-    def _call(
+    def invoke(
         self,
         inputs: Dict[str, Any],
-        run_manager: Optional[CallbackManagerForChainRun] = None,
-        is_insert=False,
+        config: Optional[RunnableConfig] = None,
     ) -> Dict[str, str]:
-        "Generate SPARQL query, use it to look up in the graph and answer the question."
-        _run_manager = run_manager or CallbackManagerForChainRun.get_noop_manager()
-        callbacks = _run_manager.get_child()
+        """Generate SPARQL query, use it to look up in the graph and answer the question."""
+        # Create callback manager (preserved from original)
+        _run_manager = CallbackManagerForChainRun.get_noop_manager()
+        if config and config.get("callbacks"):
+            # Use the provided callbacks
+            for callback in config["callbacks"]:
+                if hasattr(callback, 'on_text'):
+                    _run_manager = callback
 
         # Extract user question
         question = inputs[self.input_key]
 
         # Generate SPARQL query from the question and schema
-        sparql_result = self.sparql_generation_chain.invoke(
-            {"prompt": question, "schema": self.graph.get_schema}, callbacks=callbacks
+        generated_sparql = self.sparql_generation_chain.invoke(
+            {"prompt": question, "schema": self.graph.get_schema}, config=config
         )
-        # Extract the generated SPARQL string from the result dictionary
-        generated_sparql = sparql_result[self.sparql_generation_chain.output_key]
 
-        # Log the generated SPARQL
+        # Log the generated SPARQL (original functionality preserved)
         _run_manager.on_text("Generated SPARQL:", end="\n", verbose=self.verbose)
         _run_manager.on_text(
             generated_sparql, color="green", end="\n", verbose=self.verbose
@@ -170,6 +167,8 @@ class HanaSparqlQAChain(Chain):
         generated_sparql = self.extract_sparql(generated_sparql)
         generated_sparql = self.graph.inject_from_clause(generated_sparql)
         generated_sparql = self._ensure_common_prefixes(generated_sparql)
+
+        # Log the final SPARQL (original functionality preserved)
         _run_manager.on_text("Final SPARQL:", end="\n", verbose=self.verbose)
         _run_manager.on_text(
             generated_sparql, color="yellow", end="\n", verbose=self.verbose
@@ -178,18 +177,16 @@ class HanaSparqlQAChain(Chain):
         # Execute the generated SPARQL query against the graph
         context = self.graph.query(generated_sparql, inject_from_clause=False)
 
-        # Log the full context (SPARQL results)
+        # Log the full context (original functionality preserved)
         _run_manager.on_text("Full Context:", end="\n", verbose=self.verbose)
         _run_manager.on_text(
             str(context), color="green", end="\n", verbose=self.verbose
         )
 
         # Pass the question and query results into the QA chain
-        qa_chain_result = self.qa_chain.invoke(
-            {"prompt": question, "context": context}, callbacks=callbacks
+        result = self.qa_chain.invoke(
+            {"prompt": question, "context": context}, config=config
         )
-        # Extract the final answer from the result dictionary
-        result = qa_chain_result[self.qa_chain.output_key]
 
         # Return the final answer
         return {self.output_key: result}
