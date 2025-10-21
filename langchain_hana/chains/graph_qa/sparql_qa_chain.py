@@ -157,7 +157,7 @@ class HanaSparqlQAChain(BaseModel):
             {"prompt": question, "schema": self.graph.get_schema}, config=config
         )
 
-        # Log the generated SPARQL (original functionality preserved)
+        # Log the generated SPARQL
         _run_manager.on_text("Generated SPARQL:", end="\n", verbose=self.verbose)
         _run_manager.on_text(
             generated_sparql, color="green", end="\n", verbose=self.verbose
@@ -167,8 +167,6 @@ class HanaSparqlQAChain(BaseModel):
         generated_sparql = self.extract_sparql(generated_sparql)
         generated_sparql = self.graph.inject_from_clause(generated_sparql)
         generated_sparql = self._ensure_common_prefixes(generated_sparql)
-
-        # Log the final SPARQL (original functionality preserved)
         _run_manager.on_text("Final SPARQL:", end="\n", verbose=self.verbose)
         _run_manager.on_text(
             generated_sparql, color="yellow", end="\n", verbose=self.verbose
@@ -177,7 +175,7 @@ class HanaSparqlQAChain(BaseModel):
         # Execute the generated SPARQL query against the graph
         context = self.graph.query(generated_sparql, inject_from_clause=False)
 
-        # Log the full context (original functionality preserved)
+        # Log the full context (SPARQL results)
         _run_manager.on_text("Full Context:", end="\n", verbose=self.verbose)
         _run_manager.on_text(
             str(context), color="green", end="\n", verbose=self.verbose
