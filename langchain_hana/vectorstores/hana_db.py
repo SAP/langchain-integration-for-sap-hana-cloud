@@ -24,7 +24,7 @@ from langchain_core.vectorstores import VectorStore
 from langchain_core.vectorstores.utils import maximal_marginal_relevance
 
 from langchain_hana.embeddings import HanaInternalEmbeddings
-from langchain_hana.query_constructors import (
+from langchain_hana.vectorstores.create_where_clause import (
     CONTAINS_OPERATOR,
     LOGICAL_OPERATORS_TO_SQL,
     CreateWhereClause,

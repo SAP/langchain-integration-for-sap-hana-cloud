@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from langchain_hana.utils import DistanceStrategy
-from langchain_hana.vectorstores import HanaDB
+from langchain_hana import HanaDB
 from tests.integration_tests.fake_embeddings import ConsistentFakeEmbeddings
 from tests.integration_tests.fixtures.filtering_test_cases import (
     DOCUMENTS,
