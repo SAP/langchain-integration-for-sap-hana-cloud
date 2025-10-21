@@ -1,6 +1,6 @@
 import pytest
 from typing import List, Dict, Any
-from langchain_hana.vectorstores.where_clause_builder import CreateWhereClause 
+from langchain_hana.vectorstores.create_where_clause import CreateWhereClause 
 from langchain_hana.vectorstores.hana_db import default_metadata_column
 from tests.integration_tests.fixtures.filtering_test_cases import FILTERING_TEST_CASES
 
