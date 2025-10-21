@@ -73,7 +73,7 @@ class HanaTestUtils:
     def drop_table(conn, table_name):
         cur = conn.cursor()
         try:
-            cur.execute(f"DROP TABLE {table_name}")
+            cur.execute(f'DROP TABLE "{table_name}"')
         except dbapi.Error as e:
             raise RuntimeError(f"Error dropping table {table_name}: {e}")
         finally:

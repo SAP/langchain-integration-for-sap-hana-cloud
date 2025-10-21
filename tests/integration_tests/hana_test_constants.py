@@ -8,3 +8,4 @@ class HanaTestConstants:
         {"start": 300, "quality": "ugly", "Owner": "Steve"},  # type: ignore[list-item]
     ]
     TABLE_NAME = "TEST_TABLE"
+    TABLE_NAME_CUSTOM_DB = "CUSTOM_TEST_TABLE"
