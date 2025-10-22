@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from langchain.chains.base import Chain
-from langchain.chains.llm import LLMChain
+from langchain_classic.chains.base import Chain
+from langchain_core.runnables import Runnable
+from langchain_core.output_parsers import StrOutputParser
 from langchain_core.callbacks.manager import CallbackManagerForChainRun
 from langchain_core.language_models import BaseLanguageModel
 from langchain_core.prompts.base import BasePromptTemplate
@@ -44,8 +45,8 @@ class HanaSparqlQAChain(Chain):
     """
 
     graph: HanaRdfGraph = Field(exclude=True)
-    sparql_generation_chain: LLMChain
-    qa_chain: LLMChain
+    sparql_generation_chain: Runnable
+    qa_chain: Runnable
     input_key: str = "query"  #: :meta private:
     output_key: str = "result"  #: :meta private:
 
@@ -84,8 +85,8 @@ class HanaSparqlQAChain(Chain):
         qa_prompt: BasePromptTemplate = SPARQL_QA_PROMPT,
         **kwargs: Any,
     ) -> HanaSparqlQAChain:
-        sparql_generation_chain = LLMChain(llm=llm, prompt=sparql_generation_prompt)
-        qa_chain = LLMChain(llm=llm, prompt=qa_prompt)
+        sparql_generation_chain = sparql_generation_prompt | llm | StrOutputParser()
+        qa_chain = qa_prompt | llm | StrOutputParser()
         return cls(
             qa_chain=qa_chain,
             sparql_generation_chain=sparql_generation_chain,
