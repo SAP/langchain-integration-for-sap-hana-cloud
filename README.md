@@ -10,7 +10,7 @@ Integrates LangChain with SAP HANA Cloud to make use of vector search, knowledge
 
 ### Prerequisites
 
-- **Python Environment**: Ensure you have Python 3.9 or higher installed.
+- **Python Environment**: Ensure you have Python 3.10 or higher installed.
 - **SAP HANA Cloud**: Access to a running SAP HANA Cloud instance.
 
 ### Installation
