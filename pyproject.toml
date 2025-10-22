@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "langchain-hana"
-version = "0.3.3"
+version = "1.0.0"
 description = "An integration package connecting SAP HANA Cloud and LangChain"
 authors = []
 readme = "README.md"
@@ -14,11 +14,12 @@ license = "Apache-2.0"
 disallow_untyped_defs = "True"
 
 [tool.poetry.dependencies]
-python = ">=3.9,<4.0"
-langchain-core = "^0.3.15"
+python = ">=3.10,<4.0"
+langchain-core = "^1.0.0"
+langchain-classic = "^1.0.0"
+langchain = "^1.0.0"
 hdbcli = "^2.23.24"
 rdflib = "7.0.0"
-langchain = "^0.3.25"
 
 [[tool.poetry.dependencies.numpy]]
 version = "^1"
@@ -65,7 +66,7 @@ pytest = "^7.4.3"
 pytest-asyncio = "^0.23.2"
 pytest-socket = "^0.7.0"
 pytest-watcher = "^0.3.4"
-langchain-tests = "^0.3.5"
+langchain-tests = "^1.0.0"
 
 [tool.poetry.group.test_integration.dependencies]
 
