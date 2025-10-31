@@ -106,7 +106,7 @@ class HanaSparqlQAChain(Chain):
         querytoks = query.split("```")
         if len(querytoks) == 3:
             query = querytoks[1]
-            if query.startswith("sparql"):
+            if query.lower().startswith("sparql"):
                 query = query[6:]
         elif query.startswith("<sparql>") and query.endswith("</sparql>"):
             query = query[8:-9]
