@@ -1,36 +1,60 @@
+"""Unit tests for HanaSparqlQAChain."""
+
 import pytest
 from langchain_hana.chains.graph_qa.hana_sparql_qa_chain import HanaSparqlQAChain
 
 
-@pytest.mark.xfail(reason="Issue #47: uppercase 'SPARQL' is not properly extracted from fenced code blocks")
-def test_extract_sparql_uppercase_issue_47() -> None:
-    """Test that demonstrates issue #47: uppercase 'SPARQL' in fenced code blocks fails to extract properly.
-    
-    The issue occurs when LLM returns SPARQL code with uppercase 'SPARQL' language identifier
-    in the fenced code block. The current implementation only handles lowercase 'sparql'.
+@pytest.mark.parametrize(
+    "input_query,expected_result,test_case_name",
+    [
+        (
+            "```sparql\nSELECT * WHERE { ?s ?p ?o }\n```",
+            "SELECT * WHERE { ?s ?p ?o }",
+            "lowercase_sparql",
+        ),
+        (
+            "```SPARQL\nSELECT * WHERE { ?s ?p ?o }\n```",
+            "SELECT * WHERE { ?s ?p ?o }",
+            "uppercase_SPARQL",
+        ),
+        (
+            "```Sparql\nSELECT * WHERE { ?s ?p ?o }\n```",
+            "SELECT * WHERE { ?s ?p ?o }",
+            "mixed_case_Sparql",
+        ),
+        (
+            "```SparQL\nSELECT * WHERE { ?s ?p ?o }\n```",
+            "SELECT * WHERE { ?s ?p ?o }",
+            "mixed_case_SparQL",
+        ),
+        (
+            "```\nSELECT * WHERE { ?s ?p ?o }\n```",
+            "SELECT * WHERE { ?s ?p ?o }",
+            "fenced_no_language",
+        ),
+        (
+            "<sparql>\nSELECT * WHERE { ?s ?p ?o }\n</sparql>",
+            "SELECT * WHERE { ?s ?p ?o }",
+            "xml_tags",
+        ),
+        (
+            "SELECT * WHERE { ?s ?p ?o }",
+            "SELECT * WHERE { ?s ?p ?o }",
+            "plain_query",
+        ),
+        ("", "", "empty_string"),
+        ("   \n\t  ", "", "whitespace_only"),
+    ],
+)
+def test_extract_sparql_parameterized(
+    input_query: str, expected_result: str, test_case_name: str
+) -> None:
+    """Parameterized test for extract_sparql method covering various input formats.
+
+    This test verifies the fix for issue #47 and ensures all supported
+    formats work correctly.
     """
-    # This is the exact example from issue #47
-    uppercase_query = """```SPARQL
-PREFIX schema: <http://schema.org/>
-
-SELECT DISTINCT ?personName
-FROM <teched2025_devkeynote>
-WHERE {
-    ?person a schema:Person .
-    ?person schema:name ?personName .
-}
-```"""
-    
-    expected_sparql = """PREFIX schema: <http://schema.org/>
-
-SELECT DISTINCT ?personName
-FROM <teched2025_devkeynote>
-WHERE {
-    ?person a schema:Person .
-    ?person schema:name ?personName .
-}"""
-    
-    result = HanaSparqlQAChain.extract_sparql(uppercase_query)
-    # This will fail with current implementation - it returns "SPARQL\nPREFIX..." instead of "PREFIX..."
-    # causing HANA db execution to fail
-    assert result.strip() == expected_sparql.strip()
+    result = HanaSparqlQAChain.extract_sparql(input_query)
+    assert (
+        result.strip() == expected_result.strip()
+    ), f"Failed for test case: {test_case_name}"

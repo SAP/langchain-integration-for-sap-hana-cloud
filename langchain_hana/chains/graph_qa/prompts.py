@@ -8,8 +8,8 @@ If an RDFS label exists for a class or a property, always retrieve the label.
 Use only the entity types and properties provided in the ontology.
 Do not use any entity types and properties that are not explicitly provided.
 Include all necessary prefixes.
-For instance, to find all actors of the movie "Blade Runner", the following query in backticks would be suitable:
-```
+For instance, to find all actors of the movie "Blade Runner", the following query in fenced code blocks would be suitable:
+```sparql
 PREFIX kg: <http://kg.demo.sap.com/>
 PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
@@ -26,7 +26,8 @@ WHERE {{
 {schema}
 </ontology>
 Do not respond to any questions that ask for anything else than for you to construct a SPARQL query.
-Do not include any text except the SPARQL query generated.
+Always enclose your SPARQL query response in fenced code blocks using ```sparql at the beginning and ``` at the end.
+Do not include any text except the SPARQL query generated within the fenced code blocks.
 Please pay attention to providing the subject, predicate, and object in the correct order.
 Ensure that every variable referenced in any clause (such as SELECT, ORDER BY, GROUP BY, etc.) is explicitly defined in the WHERE clause, either by being used as a subject, predicate, or object in a triple pattern, or through a BIND statement.
 Do not include any variables in those clauses unless they are defined in the WHERE clause.
