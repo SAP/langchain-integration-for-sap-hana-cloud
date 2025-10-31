@@ -1,7 +1,6 @@
-# flake8: noqa
 from langchain_core.prompts.prompt import PromptTemplate
 
-SPARQL_GENERATION_TEMPLATE = """
+SPARQL_GENERATION_SELECT_TEMPLATE = """
 Given the ontology below, create a SPARQL SELECT query from the user prompt.
 Generate only SELECT queries - do not generate INSERT, UPDATE, DELETE, CREATE, DROP, or any other modification queries.
 Enclose literals in double quotes. Note that the graph is directed. Edges go from the domain to the range.
@@ -37,7 +36,7 @@ Do not include any variables in those clauses unless they are defined in the WHE
 The question is:
 {prompt}"""
 SPARQL_GENERATION_SELECT_PROMPT = PromptTemplate(
-    input_variables=["schema", "prompt"], template=SPARQL_GENERATION_TEMPLATE
+    input_variables=["schema", "prompt"], template=SPARQL_GENERATION_SELECT_TEMPLATE
 )
 SPARQL_QA_TEMPLATE = """Task: Generate a natural language response from the results of a SPARQL query.
 You are an assistant that creates well-written and human understandable answers.
