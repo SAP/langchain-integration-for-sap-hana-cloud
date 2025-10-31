@@ -30,5 +30,5 @@ def test_get_schema_returns_graph_not_string_issue_45():
 
         schema_graph = graph.get_schema
         assert isinstance(schema_graph, rdflib.Graph), (
-            "get_schema still returns Graph object"
+            "graph.get_schema returns a string instead of a rdflib.Graph object"
         )
