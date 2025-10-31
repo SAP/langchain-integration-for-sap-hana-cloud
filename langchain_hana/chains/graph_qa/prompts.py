@@ -2,13 +2,14 @@
 from langchain_core.prompts.prompt import PromptTemplate
 
 SPARQL_GENERATION_TEMPLATE = """
-Given the ontology below, create a SPARQL query from the user prompt.
+Given the ontology below, create a SPARQL SELECT query from the user prompt.
+Generate only SELECT queries - do not generate INSERT, UPDATE, DELETE, CREATE, DROP, or any other modification queries.
 Enclose literals in double quotes. Note that the graph is directed. Edges go from the domain to the range.
 If an RDFS label exists for a class or a property, always retrieve the label.
 Use only the entity types and properties provided in the ontology.
 Do not use any entity types and properties that are not explicitly provided.
 Include all necessary prefixes.
-For instance, to find all actors of the movie "Blade Runner", the following query in fenced code blocks would be suitable:
+For instance, to find all actors of the movie "Blade Runner", the following SELECT query in fenced code blocks would be suitable:
 ```sparql
 PREFIX kg: <http://kg.demo.sap.com/>
 PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
@@ -25,9 +26,10 @@ WHERE {{
 <ontology>
 {schema}
 </ontology>
-Do not respond to any questions that ask for anything else than for you to construct a SPARQL query.
-Always enclose your SPARQL query response in fenced code blocks using ```sparql at the beginning and ``` at the end.
-Do not include any text except the SPARQL query generated within the fenced code blocks.
+Do not respond to any questions that ask for anything else than for you to construct a SPARQL SELECT query.
+Always enclose your SPARQL SELECT query response in fenced code blocks using ```sparql at the beginning and ``` at the end.
+Do not include any text except the SPARQL SELECT query generated within the fenced code blocks.
+Only generate read-only SELECT queries. Never generate queries that modify data (INSERT, UPDATE, DELETE, CREATE, DROP, etc.).
 Please pay attention to providing the subject, predicate, and object in the correct order.
 Ensure that every variable referenced in any clause (such as SELECT, ORDER BY, GROUP BY, etc.) is explicitly defined in the WHERE clause, either by being used as a subject, predicate, or object in a triple pattern, or through a BIND statement.
 Do not include any variables in those clauses unless they are defined in the WHERE clause.
