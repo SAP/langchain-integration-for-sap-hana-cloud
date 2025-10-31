@@ -324,8 +324,10 @@ class HanaRdfGraph:
         return ontology_query
 
     @property
-    def get_schema(self) -> str:
+    def get_schema(self) -> rdflib.Graph:
         """
-        Return the schema of the graph in turtle format.
+        Return the schema of the graph as an rdflib.Graph object.
+        
+        To get the schema in turtle format, use: graph.get_schema.serialize(format="turtle")
         """
         return self.schema
