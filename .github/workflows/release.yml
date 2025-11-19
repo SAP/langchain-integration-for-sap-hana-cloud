@@ -8,20 +8,8 @@ env:
   POETRY_VERSION: "1.8.4"
 
 jobs:
-  run-tests:
-    if: github.ref == 'refs/heads/main'
-    uses: ./.github/workflows/ci.yml
-    secrets:
-      HANA_DB_ADDRESS: ${{ secrets.HANA_DB_ADDRESS }}
-      HANA_DB_PORT: ${{ secrets.HANA_DB_PORT }}
-      HANA_DB_USER: ${{ secrets.HANA_DB_USER }}
-      HANA_DB_PASSWORD: ${{ secrets.HANA_DB_PASSWORD }}
-      HANA_DB_EMBEDDING_MODEL_ID: ${{ secrets.HANA_DB_EMBEDDING_MODEL_ID }}
-  
   check-prerelease-dependencies:
-    needs:
-      - run-tests
-
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -37,6 +25,18 @@ jobs:
         run: |
           poetry run python $GITHUB_WORKSPACE/.github/scripts/check_prerelease_dependencies.py pyproject.toml
 
+  run-tests:
+    needs:
+      - check-prerelease-dependencies
+
+    uses: ./.github/workflows/ci.yml
+    secrets:
+      HANA_DB_ADDRESS: ${{ secrets.HANA_DB_ADDRESS }}
+      HANA_DB_PORT: ${{ secrets.HANA_DB_PORT }}
+      HANA_DB_USER: ${{ secrets.HANA_DB_USER }}
+      HANA_DB_PASSWORD: ${{ secrets.HANA_DB_PASSWORD }}
+      HANA_DB_EMBEDDING_MODEL_ID: ${{ secrets.HANA_DB_EMBEDDING_MODEL_ID }}
+  
   build:
     needs:
       - check-prerelease-dependencies
