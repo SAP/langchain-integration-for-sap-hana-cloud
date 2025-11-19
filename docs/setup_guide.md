@@ -1,6 +1,7 @@
 # Developer Setup Documentation
 
 ## Overview
+
 This document provides guidelines for setting up the development environment for working on this package. Additionally, it includes links to the LangChain repository for usage instructions.
 
 ---
@@ -8,6 +9,7 @@ This document provides guidelines for setting up the development environment for
 ## Developer Setup
 
 ### Prerequisites
+
 To work on the package as a developer, you will need the following tools:
 
 1. **Poetry**
@@ -55,23 +57,80 @@ To set up the development environment, follow these steps:
   - To upload the package to PyPI, follow these steps:
     1. Ensure you have an account on [PyPI](https://pypi.org/) and have the appropriate credentials.
     2. Build the distribution artifacts:
+
        ```bash
        poetry build
        ```
+
     3. Publish the package to PyPI:
+
        ```bash
        poetry publish --build
        ```
 
 - **Changing the Version**
   - To update the package version, use Poetry's versioning command:
-    ```bash
-    poetry version <new_version>
-    ```
+  
+  ```bash
+   poetry version <new_version>
+   ```
+
     Replace `<new_version>` with the desired version (e.g., `1.0.1`). This will update the `pyproject.toml` file automatically.
 
 ---
 
-## Usage Documentation
-For usage instructions and examples, please refer to the [LangChain How-to guides](https://python.langchain.com/docs/how_to/).
+## File Structure
 
+```text
+root/
+├── langchain_hana/                       
+│   ├── __init__.py                       # Exports key classes/functions for top-level imports
+│   │
+│   ├── chains/
+│   │   ├── graph_qa/
+│   │   │   ├── hana_sparql_qa_chain.py   # HanaSparqlQAChain for Graph RAG
+│   │   │   └── __init__.py
+│   │   └── __init__.py
+│   │
+│   ├── embeddings/
+│   │   ├── hana_internal_embeddings.py   # Internal Embeddings provided by HANA
+│   │   └── __init__.py
+│   │
+│   ├── graphs/
+│   │   ├── hana_rdf_graph.py              # HanaRdfGraph for SPARQL Query Execution
+│   │   └── __init__.py
+│   │
+│   ├── vectorstores/
+│   │   ├── hana_db.py                     # HanaDb Vectorstore
+│   │   └── __init__.py
+│   │
+│   ├── structured_query/
+│   │   ├── hana_translator.py             # HanaTranslator for Structured Queries
+│   │   └── __init__.py
+│   │
+│   └── hana_utils.py                      # Utility functions, constants, and types
+│
+├── tests/
+│   ├── unit_tests/                        # Unit tests for individual components
+│   └── integration_tests/                 # Integration tests across modules
+│
+├── examples/
+│   ├── chains/
+│   ├── embeddings/
+│   ├── graphs/
+│   ├── vectorstores/
+│   └── structured_query/
+│                                           # Example implementations and usage for each module
+│
+├── .github/
+│   └── workflows/                          # GitHub Actions for CI/CD
+│
+├── pyproject.toml                          # Poetry project configuration
+├── poetry.lock                             # Locked dependency versions
+└── README.md                               # Project documentation
+
+```
+
+## Usage Documentation
+
+For usage instructions and examples, please refer to the [LangChain How-to guides](https://python.langchain.com/docs/how_to/).

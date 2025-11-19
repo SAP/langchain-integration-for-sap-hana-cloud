@@ -1,7 +1,7 @@
 """Unit tests for HanaSparqlQAChain."""
 
 import pytest
-from langchain_hana.chains.graph_qa.hana_sparql_qa_chain import HanaSparqlQAChain
+from langchain_hana import HanaSparqlQAChain
 
 
 @pytest.mark.parametrize(
