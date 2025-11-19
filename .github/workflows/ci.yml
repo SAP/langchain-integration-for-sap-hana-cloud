@@ -5,7 +5,19 @@ on:
   #   branches: [ "main" ]
   # pull_request:
   #   branches: [ "main" ]
-  workflow_dispatch: 
+  workflow_dispatch:
+  workflow_call:
+    secrets:
+      HANA_DB_ADDRESS:
+        required: true
+      HANA_DB_PORT:
+        required: true
+      HANA_DB_USER:
+        required: true
+      HANA_DB_PASSWORD:
+        required: true
+      HANA_DB_EMBEDDING_MODEL_ID:
+        required: true 
 
 jobs:
   build-and-test:
@@ -45,4 +57,3 @@ jobs:
       - name: Run Integration Tests
         id: integration_tests
         run: pytest tests/integration_tests/
-
