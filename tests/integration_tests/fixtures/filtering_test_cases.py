@@ -187,6 +187,12 @@ TYPE_2_FILTERING_TEST_CASES = [
         ["true"],
     ),
     (
+        {"is_active": {"$eq": False}},
+        [2],
+        "WHERE JSON_VALUE(VEC_META, '$.is_active') = TO_BOOLEAN(?)",
+        ["false"],
+    ),
+    (
         {"is_active": {"$ne": True}},
         [2],
         "WHERE JSON_VALUE(VEC_META, '$.is_active') <> TO_BOOLEAN(?)",

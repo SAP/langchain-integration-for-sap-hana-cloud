@@ -84,6 +84,7 @@ class CreateWhereClause:
                             f", but got {value=}"
                         )
                     operator, operands = list(value.items())[0]
+                    print(f"Operator: {operator}, Operands: {operands}")
                     ret_sql_clause, ret_query_tuple = (
                         self._sql_serialize_column_operation(key, operator, operands)
                     )
@@ -100,7 +101,7 @@ class CreateWhereClause:
         ), parameters
 
     def _sql_serialize_column_operation(
-        self, column: str, operator: str, operands: dict
+        self, column: str, operator: str, operands: any
     ) -> Tuple[str, List]:
         if operator in LOGICAL_OPERATORS_TO_SQL:
             raise ValueError(
@@ -109,7 +110,7 @@ class CreateWhereClause:
             )
         if operator not in COLUMN_OPERATORS:
             raise ValueError(f"{operator=} not in {COLUMN_OPERATORS.keys()=}")
-        if not operands:
+        if not isinstance(operands, bool) and not operands:
             raise ValueError("No operands provided")
         if operator == CONTAINS_OPERATOR:
             placeholder, value = CreateWhereClause._determine_typed_sql_placeholder(
