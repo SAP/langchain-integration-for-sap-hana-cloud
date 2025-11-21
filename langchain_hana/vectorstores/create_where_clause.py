@@ -84,7 +84,6 @@ class CreateWhereClause:
                             f", but got {value=}"
                         )
                     operator, operands = list(value.items())[0]
-                    print(f"Operator: {operator}, Operands: {operands}")
                     ret_sql_clause, ret_query_tuple = (
                         self._sql_serialize_column_operation(key, operator, operands)
                     )
