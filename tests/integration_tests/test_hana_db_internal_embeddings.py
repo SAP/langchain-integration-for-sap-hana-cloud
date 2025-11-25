@@ -56,6 +56,7 @@ def setup_module(module):  # type: ignore[no-untyped-def]
         password=os.environ["HANA_DB_PASSWORD"],
         autocommit=True,
         sslValidateCertificate=False,
+        vectoroutputtype="memoryview",
         # encrypt=True
     )
 

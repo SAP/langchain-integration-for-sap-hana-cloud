@@ -86,6 +86,12 @@ class HanaDB(VectorStore):
             )
 
         self.connection = connection
+
+        # Verify connection has vectoroutputtype='memoryview'
+        if connection.getclientinfo("vectoroutputtype") != "memoryview":
+            logger.warning(
+                "Connection does not have vectoroutputtype='memoryview'."
+            )
         self.distance_strategy = distance_strategy
         self.table_name = HanaDB._sanitize_name(table_name)
         self.content_column = HanaDB._sanitize_name(content_column)
