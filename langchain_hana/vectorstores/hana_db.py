@@ -352,7 +352,20 @@ class HanaDB(VectorStore):
                 f"Unsupported vector column type: {self.vector_column_type}"
             )
 
-    def _deserialize_binary_format(self, fvecs: bytes) -> list[float]:
+    def _handle_vector_output_type(self, vector: Any) -> list[float]:
+        # Handles different vector output types from HANA DB
+        if isinstance(vector, memoryview):
+            return self._deserialize_binary_format(vector)
+        
+        if isinstance(vector, tuple):
+            return list(vector)
+        
+        if isinstance(vector, list):
+            return vector
+
+        raise ValueError("Unsupported vector format returned from database.")
+
+    def _deserialize_binary_format(self, fvecs: memoryview) -> list[float]:
         # Extracts a list of floats from binary format
         dim = struct.unpack_from("<I", fvecs, 0)[0]
         if self.vector_column_type == "HALF_VECTOR":
@@ -880,7 +893,7 @@ class HanaDB(VectorStore):
                 for row in rows:
                     js = json.loads(row[1])
                     doc = Document(page_content=row[0], metadata=js)
-                    result_vector = self._deserialize_binary_format(row[2])
+                    result_vector = self._handle_vector_output_type(row[2])
                     result.append((doc, row[3], result_vector))
         except dbapi.Error:
             logger.error(f"SQL Statement: {sql_str}")
@@ -1053,7 +1066,7 @@ class HanaDB(VectorStore):
             )
             if cur.has_result_set():
                 res = cur.fetchall()
-                return self._deserialize_binary_format(res[0][0])
+                return self._handle_vector_output_type(res[0][0])
             else:
                 raise ValueError("No result set returned for query embedding.")
         finally:
