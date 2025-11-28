@@ -8,8 +8,38 @@ env:
   POETRY_VERSION: "1.8.4"
 
 jobs:
-  build:
+  check-prerelease-dependencies:
     if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python + Poetry ${{ env.PYTHON_VERSION }}
+        uses: "./.github/actions/poetry_setup"
+        id: setup-python
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          poetry-version: ${{ env.POETRY_VERSION }}
+
+      - name: Check for prerelease versions
+        run: |
+          poetry run python $GITHUB_WORKSPACE/.github/scripts/check_prerelease_dependencies.py pyproject.toml
+
+  run-tests:
+    needs:
+      - check-prerelease-dependencies
+
+    uses: ./.github/workflows/ci.yml
+    secrets:
+      HANA_DB_ADDRESS: ${{ secrets.HANA_DB_ADDRESS }}
+      HANA_DB_PORT: ${{ secrets.HANA_DB_PORT }}
+      HANA_DB_USER: ${{ secrets.HANA_DB_USER }}
+      HANA_DB_PASSWORD: ${{ secrets.HANA_DB_PASSWORD }}
+      HANA_DB_EMBEDDING_MODEL_ID: ${{ secrets.HANA_DB_EMBEDDING_MODEL_ID }}
+  
+  build:
+    needs:
+      - check-prerelease-dependencies
     environment: Scheduled testing
     runs-on: ubuntu-latest
 
@@ -54,98 +84,10 @@ jobs:
           echo pkg-name="$(poetry version | cut -d ' ' -f 1)" >> $GITHUB_OUTPUT
           echo version="$(poetry version --short)" >> $GITHUB_OUTPUT
 
-  pre-release-checks:
-    needs:
-      - build
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-
-      # We explicitly *don't* set up caching here. This ensures our tests are
-      # maximally sensitive to catching breakage.
-      #
-      # For example, here's a way that caching can cause a falsely-passing test:
-      # - Make the langchain package manifest no longer list a dependency package
-      #   as a requirement. This means it won't be installed by `pip install`,
-      #   and attempting to use it would cause a crash.
-      # - That dependency used to be required, so it may have been cached.
-      #   When restoring the venv packages from cache, that dependency gets included.
-      # - Tests pass, because the dependency is present even though it wasn't specified.
-      # - The package is published, and it breaks on the missing dependency when
-      #   used in the real world.
-
-      - name: Set up Python + Poetry ${{ env.POETRY_VERSION }}
-        uses: "./.github/actions/poetry_setup"
-        id: setup-python
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          poetry-version: ${{ env.POETRY_VERSION }}
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: ./dist/
-
-      - name: Import dist package
-        shell: bash
-        env:
-          PKG_NAME: ${{ needs.build.outputs.pkg-name }}
-          VERSION: ${{ needs.build.outputs.version }}
-        # Here we use:
-        # - The default regular PyPI index as the *primary* index, meaning
-        #   that it takes priority (https://pypi.org/simple)
-        # - The test PyPI index as an extra index, so that any dependencies that
-        #   are not found on test PyPI can be resolved and installed anyway.
-        #   (https://test.pypi.org/simple). This will include the PKG_NAME==VERSION
-        #   package because VERSION will not have been uploaded to regular PyPI yet.
-        # - attempt install again after 5 seconds if it fails because there is
-        #   sometimes a delay in availability on test pypi
-        run: |
-          poetry run pip install dist/*.whl
-
-          # Replace all dashes in the package name with underscores,
-          # since that's how Python imports packages with dashes in the name.
-          # also remove _official suffix
-          IMPORT_NAME="$(echo "$PKG_NAME" | sed s/-/_/g | sed s/_official//g)"
-
-          poetry run python -c "import $IMPORT_NAME; print(dir($IMPORT_NAME))"
-
-      - name: Import test dependencies
-        run: poetry install --with test --no-root
-
-      # Overwrite the local version of the package with the built version
-      - name: Import published package (again)
-        shell: bash
-        env:
-          PKG_NAME: ${{ needs.build.outputs.pkg-name }}
-          VERSION: ${{ needs.build.outputs.version }}
-        run: |
-          poetry run pip install dist/*.whl
-
-      - name: Run unit tests
-        run: make tests
-
-      - name: Check for prerelease versions
-        run: |
-          poetry run python $GITHUB_WORKSPACE/.github/scripts/check_prerelease_dependencies.py pyproject.toml
-
-      - name: Import integration test dependencies
-        run: poetry install --with test,test_integration
-
-      - name: Run integration tests
-        env:
-          HANA_DB_ADDRESS: ${{ secrets.HANA_DB_ADDRESS }}
-          HANA_DB_PORT: ${{ secrets.HANA_DB_PORT }}
-          HANA_DB_USER: ${{ secrets.HANA_DB_USER }}
-          HANA_DB_PASSWORD: ${{ secrets.HANA_DB_PASSWORD }}
-          HANA_DB_EMBEDDING_MODEL_ID: ${{ secrets.HANA_DB_EMBEDDING_MODEL_ID }}
-        run: make integration_tests
-
   publish:
     needs:
       - build
-      - pre-release-checks
+
     runs-on: ubuntu-latest
     environment: release
     permissions:
@@ -186,7 +128,6 @@ jobs:
   mark-release:
     needs:
       - build
-      - pre-release-checks
       - publish
     runs-on: ubuntu-latest
     permissions:
