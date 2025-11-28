@@ -107,6 +107,12 @@ TYPE_2_FILTERING_TEST_CASES = [
         [1],
     ),
     (
+        {"id": {"$gt": 0}},
+        [1, 2, 3],
+        "WHERE JSON_VALUE(VEC_META, '$.id') > TO_DOUBLE(?)",
+        [0],
+    ),
+    (
         {"id": {"$gt": 1}},
         [2, 3],
         "WHERE JSON_VALUE(VEC_META, '$.id') > TO_DOUBLE(?)",
@@ -199,6 +205,12 @@ TYPE_2_FILTERING_TEST_CASES = [
         ["true"],
     ),
     # Test float column.
+    (
+        {"height": {"$gt": 0.0}},
+        [1, 2, 3],
+        "WHERE JSON_VALUE(VEC_META, '$.height') > TO_DOUBLE(?)",
+        [0.0],
+    ),
     (
         {"height": {"$gt": 5.0}},
         [1, 2],
