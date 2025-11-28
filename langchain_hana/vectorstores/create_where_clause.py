@@ -100,7 +100,7 @@ class CreateWhereClause:
         ), parameters
 
     def _sql_serialize_column_operation(
-        self, column: str, operator: str, operands: dict
+        self, column: str, operator: str, operands: any
     ) -> Tuple[str, List]:
         if operator in LOGICAL_OPERATORS_TO_SQL:
             raise ValueError(
@@ -109,8 +109,6 @@ class CreateWhereClause:
             )
         if operator not in COLUMN_OPERATORS:
             raise ValueError(f"{operator=} not in {COLUMN_OPERATORS.keys()=}")
-        if not operands:
-            raise ValueError("No operands provided")
         if operator == CONTAINS_OPERATOR:
             placeholder, value = CreateWhereClause._determine_typed_sql_placeholder(
                 operands
@@ -154,15 +152,25 @@ class CreateWhereClause:
 
     @staticmethod
     def _determine_typed_sql_placeholder(value):  # type: ignore[no-untyped-def]
-        if isinstance(value, dict) and ("type" in value) and (value["type"] == "date"):
-            return "TO_DATE(?)", value["date"]
-        if isinstance(value, (dict, list, tuple)):
-            raise ValueError(f"Cannot handle {value=}")
+
         the_type = type(value)
+
+        # Handle plain values.
         if the_type is bool:
             return "TO_BOOLEAN(?)", "true" if value else "false"
         if the_type in (int, float):
             return "TO_DOUBLE(?)", value
+        
+        # Do not accept empty values.
+        if not value:
+            raise ValueError("No operands provided")
+
+        # Handle container types: only allowed for dates.
+        if isinstance(value, dict) and ("type" in value) and (value["type"] == "date"):
+            return "TO_DATE(?)", value["date"]
+        if isinstance(value, (dict, list, tuple)):
+            raise ValueError(f"Cannot handle {value=}")
+        
         logger.warning(f"Plain SQL Placeholder '?' for {value=}")
         return "?", value
 

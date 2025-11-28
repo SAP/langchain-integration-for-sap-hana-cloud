@@ -107,6 +107,12 @@ TYPE_2_FILTERING_TEST_CASES = [
         [1],
     ),
     (
+        {"id": {"$gt": 0}},
+        [1, 2, 3],
+        "WHERE JSON_VALUE(VEC_META, '$.id') > TO_DOUBLE(?)",
+        [0],
+    ),
+    (
         {"id": {"$gt": 1}},
         [2, 3],
         "WHERE JSON_VALUE(VEC_META, '$.id') > TO_DOUBLE(?)",
@@ -187,12 +193,24 @@ TYPE_2_FILTERING_TEST_CASES = [
         ["true"],
     ),
     (
+        {"is_active": {"$eq": False}},
+        [2],
+        "WHERE JSON_VALUE(VEC_META, '$.is_active') = TO_BOOLEAN(?)",
+        ["false"],
+    ),
+    (
         {"is_active": {"$ne": True}},
         [2],
         "WHERE JSON_VALUE(VEC_META, '$.is_active') <> TO_BOOLEAN(?)",
         ["true"],
     ),
     # Test float column.
+    (
+        {"height": {"$gt": 0.0}},
+        [1, 2, 3],
+        "WHERE JSON_VALUE(VEC_META, '$.height') > TO_DOUBLE(?)",
+        [0.0],
+    ),
     (
         {"height": {"$gt": 5.0}},
         [1, 2],
