@@ -2,7 +2,7 @@
 
 from unittest.mock import Mock, patch
 import rdflib
-from langchain_hana.graphs import HanaRdfGraph
+from langchain_hana import HanaRdfGraph
 
 
 def test_get_schema_returns_graph_not_string_issue_45():
