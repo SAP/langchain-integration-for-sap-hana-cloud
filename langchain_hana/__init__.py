@@ -15,7 +15,7 @@ del metadata  # optional, avoids polluting the results of dir(__package__)
 
 __all__ = [
     "HanaDB",
-    "HanaTranslator"
+    "HanaTranslator",
     "HanaInternalEmbeddings",
     "HanaRdfGraph",
     "HanaSparqlQAChain",
