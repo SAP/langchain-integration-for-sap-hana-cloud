@@ -33,7 +33,17 @@ To set up the development environment, follow these steps:
 
    This command installs dependencies for development, including those for linting, formatting, spell-checking, and testing.
 
-4. You are now ready to work on the package!
+4. Configure nbstripout to prevent notebook metadata noise in git diffs:
+
+   ```bash
+   pip install nbstripout
+   nbstripout --install --attributes .gitattributes
+   git config filter.nbstripout.clean "$(git config filter.nbstripout.clean | sed 's/"$//' ) --extra-keys \"metadata.kernelspec metadata.language_info\""
+   ```
+
+   This ensures that environment-specific notebook metadata (like kernel names and Python versions) are automatically stripped when committing notebooks.
+
+5. You are now ready to work on the package!
 
 ---
 
