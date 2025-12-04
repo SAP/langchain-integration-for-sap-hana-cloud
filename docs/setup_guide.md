@@ -36,7 +36,6 @@ To set up the development environment, follow these steps:
 4. Configure nbstripout to prevent notebook metadata noise in git diffs:
 
    ```bash
-   pip install nbstripout
    nbstripout --install --attributes .gitattributes
    git config filter.nbstripout.clean "$(git config filter.nbstripout.clean | sed 's/"$//' ) --extra-keys \"metadata.kernelspec metadata.language_info\""
    ```
