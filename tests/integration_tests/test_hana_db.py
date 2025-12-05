@@ -50,24 +50,41 @@ class Config:
 config = Config()
 
 
-def setup_module(module):  # type: ignore[no-untyped-def]
-    config.conn = dbapi.connect(
-        address=os.environ["HANA_DB_ADDRESS"],
-        port=os.environ["HANA_DB_PORT"],
-        user=os.environ["HANA_DB_USER"],
-        password=os.environ["HANA_DB_PASSWORD"],
-        autocommit=True,
-        sslValidateCertificate=False,
-        # encrypt=True
-    )
+@pytest.fixture(scope="module", params=[None, "memoryview", "list", "tuple"], 
+                ids=["default", "memoryview", "list", "tuple"])
+def vectoroutputtype_param(request):  # type: ignore[no-untyped-def]
+    """Parametrize vectoroutputtype values for testing."""
+    return request.param
+
+
+@pytest.fixture(scope="module", autouse=True)
+def setup_connection(vectoroutputtype_param):  # type: ignore[no-untyped-def]
+    """Setup connection with specific vectoroutputtype parameter."""
+    # Build connection parameters
+    conn_params = {
+        "address": os.environ["HANA_DB_ADDRESS"],
+        "port": os.environ["HANA_DB_PORT"],
+        "user": os.environ["HANA_DB_USER"],
+        "password": os.environ["HANA_DB_PASSWORD"],
+        "autocommit": True,
+        "sslValidateCertificate": False,
+    }
+    
+    # Only add vectoroutputtype if it's not None (to test default behavior)
+    if vectoroutputtype_param is not None:
+        conn_params["vectoroutputtype"] = vectoroutputtype_param
+    
+    config.conn = dbapi.connect(**conn_params)
+    
     schema_prefix = "LANGCHAIN_TEST"
     HanaTestUtils.drop_old_test_schemas(config.conn, schema_prefix)
     config.schema_name = HanaTestUtils.generate_schema_name(config.conn, schema_prefix)
     HanaTestUtils.create_and_set_schema(config.conn, config.schema_name)
-
-
-def teardown_module(module):  # type: ignore[no-untyped-def]
+    
+    yield
+    
     HanaTestUtils.drop_schema_if_exists(config.conn, config.schema_name)
+    config.conn.close()
 
 
 @pytest.fixture(params=["REAL_VECTOR", "HALF_VECTOR"])
