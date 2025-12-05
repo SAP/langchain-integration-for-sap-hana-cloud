@@ -58,6 +58,7 @@ from langchain_hana import HanaRdfGraph
 ### Chains
 
 A `SparqlQAChain` is also provided which can be used with `HanaRdfGraph` for SPARQL-QA tasks.
+
 See a [usage example](https://github.com/SAP/langchain-integration-for-sap-hana-cloud/blob/main/examples/sap_hana_sparql_qa_chain.ipynb).
 
 ```python
