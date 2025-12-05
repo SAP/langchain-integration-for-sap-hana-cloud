@@ -29,20 +29,26 @@ def is_internal_embedding_available(connection, embedding) -> bool:
     """
     if embedding.model_id is None:
         return False
+    sql_params = [embedding.model_id]
+    if not embedding.remote_source:
+        sql_str = """VECTOR_EMBEDDING('test', 'QUERY', ?)"""
+    else:
+        sql_str = f"""VECTOR_EMBEDDING('test', 'QUERY', ?, "{embedding.remote_source}")"""
     try:
         cur = connection.cursor()
         # Test the VECTOR_EMBEDDING function by executing a simple query
         cur.execute(
             (
                 "SELECT TO_NVARCHAR("
-                "VECTOR_EMBEDDING('test', 'QUERY', :model_version))"
+                f"{sql_str})"
                 "FROM sys.DUMMY;"
             ),
-            model_version=embedding.model_id,
+            sql_params,
         )
         cur.fetchall()  # Ensure the query executes successfully
         return True
-    except Exception:
+    except Exception as e:
+        print(f"Error checking internal embedding availability: {e}")
         return False
     finally:
         cur.close()
@@ -53,9 +59,20 @@ def vectoroutputtype_param(request):  # type: ignore[no-untyped-def]
     """Parametrize vectoroutputtype values for testing."""
     return request.param
 
+@pytest.fixture(scope="module", params=[{
+    "internal_embedding_model_id": os.environ["HANA_DB_EMBEDDING_MODEL_ID"],
+}, {
+    "internal_embedding_model_id": os.environ["HANA_DB_EMBEDDING_REMOTE_MODEL_ID"],
+    "remote_source": os.environ["HANA_DB_EMBEDDING_REMOTE_SOURCE"],
+}], 
+                ids=["without_remote_source", "with_remote_source"])
+def embedding_param(request):  # type: ignore[no-untyped-def]
+    """Parametrize embedding values for testing."""
+    return request.param
+
 
 @pytest.fixture(scope="module", autouse=True)
-def setup_connection(vectoroutputtype_param):  # type: ignore[no-untyped-def]
+def setup_connection(vectoroutputtype_param, embedding_param):  # type: ignore[no-untyped-def]
     """Setup connection with specific vectoroutputtype parameter."""
     # Build connection parameters
     conn_params = {
@@ -72,11 +89,7 @@ def setup_connection(vectoroutputtype_param):  # type: ignore[no-untyped-def]
         conn_params["vectoroutputtype"] = vectoroutputtype_param
     
     config.conn = dbapi.connect(**conn_params)
-
-    embedding_model_id = os.environ["HANA_DB_EMBEDDING_MODEL_ID"]
-    config.embedding = HanaInternalEmbeddings(
-        internal_embedding_model_id=embedding_model_id
-    )
+    config.embedding = HanaInternalEmbeddings(**embedding_param)
 
     if not is_internal_embedding_available(config.conn, config.embedding):
         pytest.fail(

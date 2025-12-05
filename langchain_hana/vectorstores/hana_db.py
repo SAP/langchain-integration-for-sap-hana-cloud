@@ -103,6 +103,7 @@ class HanaDB(VectorStore):
         self.embedding: Embeddings
         self.use_internal_embeddings: bool = False
         self.internal_embedding_model_id: str = ""
+        self.internal_embedding_remote_source: str = ""
         self.set_embedding(embedding)
 
         # Initialize the table if it doesn't exist
@@ -118,6 +119,7 @@ class HanaDB(VectorStore):
             # Internal embeddings
             self.use_internal_embeddings = True
             self.internal_embedding_model_id = embedding.get_model_id()
+            self.internal_embedding_remote_source = embedding.get_remote_source()
             self._validate_internal_embedding_function()
         else:
             # External embeddings
@@ -207,6 +209,24 @@ class HanaDB(VectorStore):
         finally:
             cur.close()
 
+    def _generate_vector_embedding_sql_and_params(self, text: str, type: str) -> str:
+        """Generate the VECTOR_EMBEDDING SQL expression and parameters."""
+        if type != "QUERY" and type != "DOCUMENT":
+            raise ValueError("type must be either 'QUERY' or 'DOCUMENT'")
+        
+        vector_embedding_params = [text, self.internal_embedding_model_id]
+        if  not self.internal_embedding_remote_source:
+            vector_embedding_sql = (
+                f"""VECTOR_EMBEDDING(?, '{type}', ?)"""
+            )
+        else:
+            vector_embedding_sql = (
+                f"""VECTOR_EMBEDDING(?, '{type}', ?, "{self.internal_embedding_remote_source}")"""
+            )
+
+        return vector_embedding_sql, vector_embedding_params
+
+
     def _validate_internal_embedding_function(self) -> None:
         """
         Ping the database to check if the in-database embedding function
@@ -216,16 +236,16 @@ class HanaDB(VectorStore):
         """
         if self.internal_embedding_model_id is None:
             raise ValueError("Internal embedding model id can't be none!")
+        vector_embedding_sql, vector_embedding_params = self._generate_vector_embedding_sql_and_params('test', 'QUERY')
         cur = self.connection.cursor()
         try:
             # Test the VECTOR_EMBEDDING function by executing a simple query
             cur.execute(
                 (
                     "SELECT COUNT(TO_NVARCHAR("
-                    "VECTOR_EMBEDDING('test', 'QUERY', :model_version))) "
+                    f"{vector_embedding_sql})) "
                     ' AS "CNT" FROM sys.DUMMY;'
-                ),
-                model_version=self.internal_embedding_model_id,
+                ), vector_embedding_params
             )
         finally:
             cur.close()
@@ -605,21 +625,13 @@ class HanaDB(VectorStore):
             metadata, extracted_special_metadata = self._split_off_special_metadata(
                 metadata
             )
-            parameters = {
-                "content": text,  # Replace `content_value` with the actual value
-                "metadata": json.dumps(
+            parameters = [text]
+            parameters.append(json.dumps(
                     HanaDB._sanitize_metadata_keys(metadata)
-                ),  # Replace `metadata_value` with the actual value
-                "model_version": self.internal_embedding_model_id,
-            }
-            parameters.update(
-                {
-                    col: value
-                    for col, value in zip(
-                        self.specific_metadata_columns, extracted_special_metadata
-                    )
-                }
-            )  # specific_metadata_values must align with the columns
+                ))  # Replace `metadata_value` with the actual value
+            parameters.extend(self._generate_vector_embedding_sql_and_params(text, 'DOCUMENT')[1])
+            # specific_metadata_values must align with the columns
+            parameters.extend(extracted_special_metadata)
             sql_params.append(parameters)
 
         specific_metadata_str = ", ".join(
@@ -628,7 +640,7 @@ class HanaDB(VectorStore):
         specific_metadata_columns_string = self._get_specific_metadata_columns_string()
 
         # Wrap VECTOR_EMBEDDING with vector type conversion if needed
-        vector_embedding_sql = "VECTOR_EMBEDDING(:content, 'DOCUMENT', :model_version)"
+        vector_embedding_sql = self._generate_vector_embedding_sql_and_params('text', 'DOCUMENT')[0]
         vector_embedding_sql = self._convert_vector_embedding_to_column_type(
             vector_embedding_sql
         )
@@ -637,8 +649,8 @@ class HanaDB(VectorStore):
             f'INSERT INTO "{self.table_name}" ("{self.content_column}", '
             f'"{self.metadata_column}", '
             f'"{self.vector_column}"{specific_metadata_columns_string}) '
-            f"VALUES (:content, :metadata, {vector_embedding_sql} "
-            f"{(', ' + specific_metadata_str) if specific_metadata_str else ''});"
+            f"VALUES (?, ?, {vector_embedding_sql} "
+            f"{(', ?'* len(self.specific_metadata_columns))});"
         )
 
         # Insert data into the table
@@ -804,13 +816,12 @@ class HanaDB(VectorStore):
                 "similarity_search_with_score_and_vector_by_query"
             )
 
-        embedding_expr = "VECTOR_EMBEDDING(?, 'QUERY', ?)"
+        vector_embedding_sql, vector_embedding_params = self._generate_vector_embedding_sql_and_params(query, 'QUERY')
         # Wrap VECTOR_EMBEDDING with vector type conversion if needed
         vector_embedding_sql = self._convert_vector_embedding_to_column_type(
-            embedding_expr
+            vector_embedding_sql
         )
 
-        vector_embedding_params = [query, self.internal_embedding_model_id]
         return self._similarity_search_with_score_and_vector(
             vector_embedding_sql,
             vector_embedding_params=vector_embedding_params,
@@ -823,7 +834,7 @@ class HanaDB(VectorStore):
         embedding_expr: str,
         k: int,
         filter: Optional[dict] = None,
-        vector_embedding_params: Optional[list[str]] = None,
+        vector_embedding_params: Optional[dict] = None,
     ) -> list[tuple[Document, float, list[float]]]:
         """Perform similarity search and return documents with scores and vectors.
 
@@ -1052,7 +1063,7 @@ class HanaDB(VectorStore):
         """
         Generates query embedding using HANA's internal embedding engine.
         """
-        vector_embedding_sql = "VECTOR_EMBEDDING(:content, 'QUERY', :model_version)"
+        vector_embedding_sql, vector_embedding_sql_params = self._generate_vector_embedding_sql_and_params(query, 'QUERY')
         vector_embedding_sql = self._convert_vector_embedding_to_column_type(
             vector_embedding_sql
         )
@@ -1061,8 +1072,7 @@ class HanaDB(VectorStore):
         try:
             cur.execute(
                 sql_str,
-                content=query,
-                model_version=self.internal_embedding_model_id,
+                vector_embedding_sql_params,
             )
             if cur.has_result_set():
                 res = cur.fetchall()
