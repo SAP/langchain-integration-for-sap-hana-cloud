@@ -58,6 +58,7 @@ optional = true
 optional = true
 
 [tool.poetry.group.dev.dependencies]
+nbstripout = "^0.8.2"
 
 [tool.poetry.group.test.dependencies]
 pytest = "^7.4.3"
