@@ -18,6 +18,10 @@ on:
         required: true
       HANA_DB_EMBEDDING_MODEL_ID:
         required: true 
+      HANA_DB_EMBEDDING_REMOTE_MODEL_ID:
+        required: true
+      HANA_DB_EMBEDDING_REMOTE_SOURCE:
+        required: true
 
 jobs:
   build-and-test:
@@ -30,6 +34,8 @@ jobs:
       HANA_DB_USER: ${{ secrets.HANA_DB_USER }}
       HANA_DB_PASSWORD: ${{ secrets.HANA_DB_PASSWORD }}
       HANA_DB_EMBEDDING_MODEL_ID: ${{ secrets.HANA_DB_EMBEDDING_MODEL_ID }}
+      HANA_DB_EMBEDDING_REMOTE_MODEL_ID: ${{ secrets.HANA_DB_EMBEDDING_REMOTE_MODEL_ID }}
+      HANA_DB_EMBEDDING_REMOTE_SOURCE: ${{ secrets.HANA_DB_EMBEDDING_REMOTE_SOURCE }}
 
 
     steps:
