@@ -39,7 +39,7 @@ jobs:
   
   build:
     needs:
-      - check-prerelease-dependencies
+      - run-tests
     environment: Scheduled testing
     runs-on: ubuntu-latest
 
