@@ -67,7 +67,7 @@ from langchain_hana import HanaSparqlQAChain
 
 ## Documentation
 
-For a detailed guide on using the package, please refer to the [examples](./examples/) here.
+For a detailed guide on using the package, please refer to the [examples](https://github.com/SAP/langchain-integration-for-sap-hana-cloud/blob/main/examples/) here.
 
 ## Support, Feedback, Contributing
 
