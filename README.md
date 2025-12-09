@@ -6,7 +6,7 @@
 >
 >You are currently reading the documentation for version 0.3.x, which is no longer the latest release.
 >
-> Latest version (1.0.x):  
+> Latest version:  
 > [https://github.com/SAP/langchain-integration-for-sap-hana-cloud/tree/main](https://github.com/SAP/langchain-integration-for-sap-hana-cloud/tree/main)
 
 # LangChain integration for SAP HANA Cloud
