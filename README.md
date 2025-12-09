@@ -5,6 +5,7 @@
 > ### Deprecated Version Notice
 >
 >You are currently reading the documentation for version 0.3.x, which is no longer the latest release.
+>
 > Latest version (1.0.x):  
 > [https://github.com/SAP/langchain-integration-for-sap-hana-cloud/tree/main](https://github.com/SAP/langchain-integration-for-sap-hana-cloud/tree/main)
 
