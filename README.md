@@ -1,5 +1,13 @@
 [![REUSE status](https://api.reuse.software/badge/github.com/SAP/langchain-integration-for-sap-hana-cloud)](https://api.reuse.software/info/github.com/SAP/langchain-integration-for-sap-hana-cloud)
 
+> [!NOTE]
+>
+> ### Legacy Version
+>
+> Langchain 0.3.x compatible version of this package is maintained in the 0.3.x branch:
+>
+> [https://github.com/SAP/langchain-integration-for-sap-hana-cloud/tree/0.3.x](https://github.com/SAP/langchain-integration-for-sap-hana-cloud/tree/0.3.x)
+
 # LangChain integration for SAP HANA Cloud
 
 ## About this project
@@ -10,7 +18,7 @@ Integrates LangChain with SAP HANA Cloud to make use of vector search, knowledge
 
 ### Prerequisites
 
-- **Python Environment**: Ensure you have Python 3.9 or higher installed.
+- **Python Environment**: Ensure you have Python 3.10 or higher installed.
 - **SAP HANA Cloud**: Access to a running SAP HANA Cloud instance.
 
 ### Installation
@@ -67,7 +75,7 @@ from langchain_hana import HanaSparqlQAChain
 
 ## Documentation
 
-For a detailed guide on using the package, please refer to the [examples](./examples/) here.
+For a detailed guide on using the package, please refer to the [examples](https://github.com/SAP/langchain-integration-for-sap-hana-cloud/blob/main/examples/) here.
 
 ## Support, Feedback, Contributing
 
