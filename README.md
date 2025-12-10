@@ -2,10 +2,10 @@
 
 > [!NOTE]
 >
-> ### Legacy Documentation
+> ### Legacy Version
 >
-> For legacy documentation, please refer to:
-> 
+> Langchain 0.3.x compatible version of this package is maintained in the 0.3.x branch:
+>
 > [https://github.com/SAP/langchain-integration-for-sap-hana-cloud/tree/0.3.x](https://github.com/SAP/langchain-integration-for-sap-hana-cloud/tree/0.3.x)
 
 # LangChain integration for SAP HANA Cloud
