@@ -1,5 +1,12 @@
 [![REUSE status](https://api.reuse.software/badge/github.com/SAP/langchain-integration-for-sap-hana-cloud)](https://api.reuse.software/info/github.com/SAP/langchain-integration-for-sap-hana-cloud)
 
+> [!NOTE]
+>
+> ### Legacy Documentation
+>
+> For legacy documentation, please refer to:
+> [https://github.com/SAP/langchain-integration-for-sap-hana-cloud/tree/0.3.x](https://github.com/SAP/langchain-integration-for-sap-hana-cloud/tree/0.3.x)
+
 # LangChain integration for SAP HANA Cloud
 
 ## About this project
