@@ -5,6 +5,7 @@
 > ### Legacy Documentation
 >
 > For legacy documentation, please refer to:
+> 
 > [https://github.com/SAP/langchain-integration-for-sap-hana-cloud/tree/0.3.x](https://github.com/SAP/langchain-integration-for-sap-hana-cloud/tree/0.3.x)
 
 # LangChain integration for SAP HANA Cloud
