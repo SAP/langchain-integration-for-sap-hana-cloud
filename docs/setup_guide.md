@@ -28,7 +28,7 @@ To set up the development environment, follow these steps:
 3. Run the following command to install all necessary dependencies:
 
    ```bash
-   poetry install --with lint,typing,test,test_integration
+   poetry install --with dev,lint,typing,test,test_integration
    ```
 
    This command installs dependencies for development, including those for linting, formatting, spell-checking, and testing.
