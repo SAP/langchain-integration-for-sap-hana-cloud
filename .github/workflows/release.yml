@@ -9,7 +9,7 @@ env:
 
 jobs:
   check-prerelease-dependencies:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/0.3.x'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
