@@ -45,9 +45,6 @@ asyncio_mode = "auto"
 [tool.poetry.group.test]
 optional = true
 
-[tool.poetry.group.test_integration]
-optional = true
-
 [tool.poetry.group.lint]
 optional = true
 
