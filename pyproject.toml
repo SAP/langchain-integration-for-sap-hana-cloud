@@ -58,9 +58,10 @@ optional = true
 nbstripout = "^0.8.2"
 
 [tool.poetry.group.test.dependencies]
-pytest = "^7.4.3"
-
-[tool.poetry.group.test_integration.dependencies]
+pytest = "^9.0.2"
+pytest-asyncio = "^1.3.0"
+pytest-socket = "^0.7.0"
+pytest-watcher = "^0.6.3"
 
 [tool.poetry.group.lint.dependencies]
 ruff = "^0.5"
