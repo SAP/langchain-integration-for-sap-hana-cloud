@@ -259,6 +259,12 @@ def test_hanavector_add_texts(vectorDB) -> None:
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
+def test_hanavector_add_texts_with_map_merge(vectorDB) -> None:
+    with pytest.raises(ValueError, match="map merge cannot be used with external embeddings"):
+        vectorDB.add_texts(texts=HanaTestConstants.TEXTS, use_map_merge=True)
+
+
+@pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_from_texts(table_name_with_cleanup) -> None:
     table_name = table_name_with_cleanup
     vectorDB = HanaDB.from_texts(
@@ -281,6 +287,19 @@ def test_hanavector_from_texts(table_name_with_cleanup) -> None:
         rows = cur.fetchall()
         number_of_rows = rows[0][0]
     assert number_of_rows == number_of_texts
+
+
+@pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
+def test_hanavector_from_texts_with_map_merge(table_name_with_cleanup) -> None:
+    with pytest.raises(ValueError, match="map merge cannot be used with external embeddings"):
+        table_name = table_name_with_cleanup
+        vectorDB = HanaDB.from_texts(
+            connection=config.conn,
+            texts=HanaTestConstants.TEXTS,
+            embedding=embedding,
+            table_name=table_name,
+            use_map_merge=True,
+        )
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
