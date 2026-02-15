@@ -795,8 +795,6 @@ class HanaDB(VectorStore):
         # Insert data into the table
         cur = self.connection.cursor()
         try:
-            print(sql_str)
-            print(sql_params)
             cur.executemany(sql_str, sql_params)
         finally:
             cur.close()
