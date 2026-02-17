@@ -23,6 +23,10 @@ on:
       HANA_DB_EMBEDDING_REMOTE_SOURCE:
         required: true
 
+env:
+  PYTHON_VERSION: "3.11"
+  POETRY_VERSION: "1.8.4"
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
@@ -42,24 +46,21 @@ jobs:
       - name: Check out the repository
         uses: actions/checkout@v3
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - name: Set up Python + Poetry ${{ env.PYTHON_VERSION }}
+        uses: "./.github/actions/poetry_setup"
+        id: setup-python
         with:
-          python-version: '3.11'
+          python-version: ${{ env.PYTHON_VERSION }}
+          poetry-version: ${{ env.POETRY_VERSION }}
 
-      - name: Upgrade pip
-        run: pip install --upgrade pip
-
-      - name: Install main dependencies
-        run: pip install .
-
-      - name: Install test dependencies
-        run: pip install pytest pytest-asyncio pytest-socket pytest-watcher langchain-tests
+      - name: Install dependencies
+        run: poetry install --with test
 
       - name: Run Unit Tests
         id: unit_tests
-        run: pytest tests/unit_tests/
+        # unit tests are run with the --disable-socket flag to prevent network calls
+        run: poetry run pytest --disable-socket --allow-unix-socket tests/unit_tests/
 
       - name: Run Integration Tests
         id: integration_tests
-        run: pytest tests/integration_tests/
+        run: poetry run pytest tests/integration_tests/
