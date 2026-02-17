@@ -211,7 +211,7 @@ class CreateWhereClause:
             return "TO_NVARCHAR(?)", value
 
         # Handle container types: only allowed for dates.
-        if isinstance(value, dict) and ("type" in value) and (value["type"] == "date"):
+        if is_date_value(value):
             return "TO_DATE(?)", value["date"]
         
         # If we reach this point, the value type is not supported.
