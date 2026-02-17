@@ -76,7 +76,7 @@ class CreateWhereClause:
                     key, value
                 )
             else:
-                if not (isinstance(value, (bool, int, str, dict)) or value is None):
+                if not (isinstance(value, (bool, int, str, dict, float)) or value is None):
                     raise ValueError(f"Unsupported filter value type: {type(value)}")
                 if isinstance(value, dict) and "type" not in value:
                     # Value is an operator.
