@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "langchain-hana"
-version = "1.0.1"
+version = "1.0.2"
 description = "An integration package connecting SAP HANA Cloud and LangChain"
 authors = []
 readme = "README.md"
@@ -19,7 +19,7 @@ langchain-core = "^1.0.0"
 langchain-classic = "^1.0.0"
 langchain = "^1.0.0"
 hdbcli = "^2.23.24"
-rdflib = "7.0.0"
+rdflib = "^7.0.0"
 
 [[tool.poetry.dependencies.numpy]]
 version = ">=1.26.4"
