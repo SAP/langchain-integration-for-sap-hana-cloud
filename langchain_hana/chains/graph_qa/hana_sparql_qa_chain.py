@@ -155,15 +155,13 @@ class HanaSparqlQAChain(Chain):
         question = inputs[self.input_key]
 
         # Generate SPARQL query from the question and schema
-        sparql_result = self.sparql_generation_chain.invoke(
+        generated_sparql = self.sparql_generation_chain.invoke(
             {
                 "prompt": question, 
                 "schema": self.graph.get_schema.serialize(format="turtle")
             }, 
             callbacks=callbacks
         )
-        # Extract the generated SPARQL string from the result dictionary
-        generated_sparql = sparql_result[self.sparql_generation_chain.output_key]
 
         # Log the generated SPARQL
         _run_manager.on_text("Generated SPARQL:", end="\n", verbose=self.verbose)
@@ -190,11 +188,9 @@ class HanaSparqlQAChain(Chain):
         )
 
         # Pass the question and query results into the QA chain
-        qa_chain_result = self.qa_chain.invoke(
+        qa_result = self.qa_chain.invoke(
             {"prompt": question, "context": context}, callbacks=callbacks
         )
-        # Extract the final answer from the result dictionary
-        result = qa_chain_result[self.qa_chain.output_key]
 
         # Return the final answer
-        return {self.output_key: result}
+        return {self.output_key: qa_result}
