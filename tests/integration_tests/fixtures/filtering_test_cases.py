@@ -379,11 +379,11 @@ ERROR_FILTERING_TEST_CASES = [
     # plain value is not supported
     (
         {"name": ["abcd"]},
-        OperatorErrorMessageGenerator.err_unsupported_filter_type(list),
+        OperatorErrorMessageGenerator.err_unsupported_filter_type(list, ["abcd"]),
     ),
     (
         {"key": [1, 2, 3]},
-        OperatorErrorMessageGenerator.err_unsupported_filter_type(list),
+        OperatorErrorMessageGenerator.err_unsupported_filter_type(list, [1, 2, 3]),
     ),
     # # logical operators
     (
@@ -449,7 +449,7 @@ ERROR_FILTERING_TEST_CASES = [
     # eq and ne operators
     (
         {"name": ["unexpected", "list"]},
-        OperatorErrorMessageGenerator.err_unsupported_filter_type(list),
+        OperatorErrorMessageGenerator.err_unsupported_filter_type(list, ["unexpected", "list"]),
     ),
     (
         {"name": {"$eq": ["unexpected", "list"]}},

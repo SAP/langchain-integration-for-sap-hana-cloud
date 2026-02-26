@@ -57,8 +57,8 @@ class OperatorErrorMessageGenerator:
         )
 
     @staticmethod
-    def err_unsupported_filter_type(type_):
-        return f"Unsupported filter value type: {type_}"
+    def err_unsupported_filter_type(the_type, value):
+        return f"Unsupported  value type: {the_type=}, value={value}"
 
     @staticmethod
     def err_logical_operands(operator, operands):

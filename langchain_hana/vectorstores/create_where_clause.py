@@ -77,8 +77,6 @@ class CreateWhereClause:
                     key, value
                 )
             else:
-                # validation before extraction of base value
-                self._validate_base_value(value)
                 if isinstance(value, dict) and "type" not in value:
                     # Value is an operator.
                     if len(value) != 1:
@@ -91,26 +89,23 @@ class CreateWhereClause:
                     ret_sql_clause, ret_query_tuple = (
                         self._sql_serialize_column_operation(key, operator, operands)
                     )
+                elif value is None:
+                    # Value is plain NULL.
+                    ret_sql_clause = f"{self._create_selector(key)} IS NULL"
+                    ret_query_tuple = []
                 else:
-                    if value is None:
-                        ret_sql_clause = f"{self._create_selector(key)} IS NULL"
-                        ret_query_tuple = []
-                    else:
-                        placeholder, value = (
-                            CreateWhereClause._determine_typed_sql_placeholder(value)
-                        )
-                        ret_sql_clause = f"{self._create_selector(key)} = {placeholder}"
-                        ret_query_tuple = [value]
+                    # Value represents a typed SQL value.
+                    # _determine_typed_sql_placeholder throws for illegal types.
+                    placeholder, value = (
+                        CreateWhereClause._determine_typed_sql_placeholder(value)
+                    )
+                    ret_sql_clause = f"{self._create_selector(key)} = {placeholder}"
+                    ret_query_tuple = [value]
             statements.append(ret_sql_clause)
             parameters += ret_query_tuple
         return CreateWhereClause._sql_serialize_logical_clauses(
             "AND", statements
         ), parameters
-    
-    def _validate_base_value(self, value: Any) -> None:
-        base_value_types = (bool, int, str, dict, float, type(None))
-        if not isinstance(value, base_value_types):
-            raise ValueError(OperatorErrorMessageGenerator.err_unsupported_filter_type(type(value)))
     
     def _validate_logical_operation(self, operator: str, operands: Any) -> None:
         if operator not in LOGICAL_OPERATORS_TO_SQL:
@@ -215,7 +210,7 @@ class CreateWhereClause:
             return "TO_DATE(?)", value["date"]
         
         # If we reach this point, the value type is not supported.
-        raise ValueError(f"Unsupported value type: {the_type=}, value={value}")
+        raise ValueError(OperatorErrorMessageGenerator.err_unsupported_filter_type(the_type, value))
 
     @staticmethod
     def _sql_serialize_logical_clauses(
