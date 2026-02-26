@@ -16,18 +16,6 @@ def test_create_where_clause_empty_filter() -> None:
     assert where_clause == ""
     assert parameters == []
 
-
-def test_create_where_clause_unexpected_operator() -> None:
-    invalid_filter = {"$eq": [{"key": "value"}]}
-    with pytest.raises(ValueError, match="Unexpected operator"):
-        CreateWhereClause(MockHanaDb())(invalid_filter)
-
-
-def test_create_where_clause_unsupported_filter_value_type() -> None:
-    unsupported_filter = {"key": [1, 2, 3]}
-    with pytest.raises(ValueError, match="Unsupported filter value type"):
-        CreateWhereClause(MockHanaDb())(unsupported_filter)
-
 @pytest.mark.parametrize(
     "test_filter, expected_exception_message",
     ERROR_FILTERING_TEST_CASES,
