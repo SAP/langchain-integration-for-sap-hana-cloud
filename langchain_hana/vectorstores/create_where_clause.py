@@ -1,6 +1,5 @@
 import logging
 from typing import List, Tuple, Any
-from langchain_hana.utils import OperatorErrorMessageGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +64,7 @@ class CreateWhereClause:
 
     def _create_where_clause(self, filter: dict) -> Tuple[str, List]:
         if not filter:
-            raise ValueError(OperatorErrorMessageGenerator.err_empty_filter())
+            raise ValueError("Empty filter")
         statements = []
         parameters = []
         for key, value in filter.items():
@@ -81,7 +80,8 @@ class CreateWhereClause:
                     # Value is an operator.
                     if len(value) != 1:
                         raise ValueError(
-                            OperatorErrorMessageGenerator.err_single_operator_expected(value)
+                            "Expecting a single entry 'operator: operands'"
+                            f", but got {value=}"
                         )
                     operator, operands = list(value.items())[0]
                     # validation before calling serialization
@@ -109,41 +109,41 @@ class CreateWhereClause:
     
     def _validate_logical_operation(self, operator: str, operands: Any) -> None:
         if operator not in LOGICAL_OPERATORS_TO_SQL:
-            raise ValueError(OperatorErrorMessageGenerator.err_unknown_logical_operator(operator, LOGICAL_OPERATORS_TO_SQL.keys()))
+            raise ValueError(f"operator {operator=} not in {LOGICAL_OPERATORS_TO_SQL.keys()=}")
         if not isinstance(operands, list) or len(operands) < 2:
-            raise ValueError(OperatorErrorMessageGenerator.err_logical_operands(operator, operands))
+            raise ValueError(f"Expected a list of atleast two operands for {operator=}, but got {operands=}")
         
     def _validate_column_operation(self, operator: str, operands: Any) -> None:
         if operator not in COLUMN_OPERATORS:
-            raise ValueError(OperatorErrorMessageGenerator.err_unknown_comparison_operator(operator, COLUMN_OPERATORS.keys()))
+            raise ValueError(f"operator {operator=} not in {COLUMN_OPERATORS.keys()=}")
         if operator == CONTAINS_OPERATOR:
             if not isinstance(operands, str) or not operands:
-                raise ValueError(OperatorErrorMessageGenerator.err_contains(operator, operands))
+                raise ValueError(f"Expected a non-empty string operand for {operator=}, but got {operands=}")
         elif operator == LIKE_OPERATOR:
             if not isinstance(operands, str):
-                raise ValueError(OperatorErrorMessageGenerator.err_like(operator, operands))
+                raise ValueError(f"Expected a string operand for {operator=}, but got {operands=}")
         elif operator == BETWEEN_OPERATOR:
             if not isinstance(operands, list) or len(operands) != 2:
-                raise ValueError(OperatorErrorMessageGenerator.err_between_length(operator, operands))
+                raise ValueError(f"Expected a list of two operands for {operator=}, but got {operands=}")
             if type(operands[0]) != type(operands[1]):
-                raise ValueError(OperatorErrorMessageGenerator.err_between_type_match(operator, operands))
+                raise ValueError(f"Expected operands of the same type for {operator=}, but got {operands=}")
             if isinstance(operands[0], bool) or not (isinstance(operands[0], (int, float, str)) or is_date_value(operands[0])):
-                raise ValueError(OperatorErrorMessageGenerator.err_between_allowed_types(operator, operands))
+                raise ValueError(f"Expected a list of (int, float, str, date) for {operator=}, but got {operands=}")
         elif operator in IN_OPERATORS_TO_SQL:
             if not isinstance(operands, list) or len(operands) == 0:
-                raise ValueError(OperatorErrorMessageGenerator.err_in_non_empty(operator, operands))
+                raise ValueError(f"Expected a non-empty list of operands for {operator=}, but got {operands=}")
             check_type = {type(operand) for operand in operands}
             if len(check_type) > 1:
-                raise ValueError(OperatorErrorMessageGenerator.err_in_type_match(operator, operands))
+                raise ValueError(f"Expected operands of the same type for {operator=}, but got {operands=}")
             if not (list(check_type)[0] in (int, float, str, bool) or all(is_date_value(operand) for operand in operands)):
-                raise ValueError(OperatorErrorMessageGenerator.err_in_type_match(operator, operands))
+                raise ValueError(f"Expected a list of (int, float, str, bool, date) for {operator=}, but got {operands=}")
         
         if operator in ("$eq", "$ne"):
                 if not (isinstance(operands, (int, float, str, bool)) or is_date_value(operands) or operands is None):
-                    raise ValueError(OperatorErrorMessageGenerator.err_eq_ne(operator, operands))
+                    raise ValueError(f"Expected a (int, float, str, bool, date, None) for {operator=}, but got {operands=}")
         if operator in ("$gt", "$gte", "$lt", "$lte"):
             if  isinstance(operands, bool) or not (isinstance(operands, (int, float, str)) or is_date_value(operands)):
-                raise ValueError(OperatorErrorMessageGenerator.err_comparison(operator, operands))
+                raise ValueError(f"Expected a (int, float, str, date) for {operator=}, but got {operands=}")
 
     def _sql_serialize_column_operation(
         self, column: str, operator: str, operands: any
@@ -210,7 +210,7 @@ class CreateWhereClause:
             return "TO_DATE(?)", value["date"]
         
         # If we reach this point, the value type is not supported.
-        raise ValueError(OperatorErrorMessageGenerator.err_unsupported_filter_type(the_type, value))
+        raise ValueError(f"Unsupported filter value type: {the_type}, value: {value}")
 
     @staticmethod
     def _sql_serialize_logical_clauses(

@@ -2,12 +2,6 @@
 
 from langchain_core.documents import Document
 
-from langchain_hana.utils import OperatorErrorMessageGenerator
-from langchain_hana.vectorstores.create_where_clause import (
-    COLUMN_OPERATORS,
-    LOGICAL_OPERATORS_TO_SQL,
-)
-
 
 metadatas = [
     {
@@ -361,120 +355,117 @@ ERROR_FILTERING_TEST_CASES = [
     # unknown logical operator
     (
         {"$xor": [{"id": 1}, {"id": 2}]},
-        OperatorErrorMessageGenerator.err_unknown_logical_operator("$xor", LOGICAL_OPERATORS_TO_SQL.keys()),
+        "operator='$xor' not in LOGICAL_OPERATORS_TO_SQL.keys()=dict_keys(['$and', '$or'])",
     ),
     (
         {"$eq": [{"key": "value"}]},
-        OperatorErrorMessageGenerator.err_unknown_logical_operator("$eq", LOGICAL_OPERATORS_TO_SQL.keys()),
+        "operator='$eq' not in LOGICAL_OPERATORS_TO_SQL.keys()=dict_keys(['$and', '$or'])",
     ),
     (
         {"id": {"$unknown": 1}},
-        OperatorErrorMessageGenerator.err_unknown_comparison_operator("$unknown", COLUMN_OPERATORS.keys()),
+        "operator='$unknown' not in COLUMN_OPERATORS.keys()=dict_keys(['$eq', '$ne', '$lt', '$lte', '$gt', '$gte', '$in', '$nin', '$between', '$like', '$contains'])",
     ),
     # more than one operator at the same level
     (
-        {"name": {"$eq": "adam", "$ne": "bob"}},
-        OperatorErrorMessageGenerator.err_single_operator_expected({"$eq": "adam", "$ne": "bob"}),
+      {"name": {"$eq": "adam", "$ne": "bob"}},
+      "Expecting a single entry 'operator: operands'"
+      f", but got value={{'$eq': 'adam', '$ne': 'bob'}}"
     ),
     # plain value is not supported
     (
         {"name": ["abcd"]},
-        OperatorErrorMessageGenerator.err_unsupported_filter_type(list, ["abcd"]),
-    ),
-    (
-        {"key": [1, 2, 3]},
-        OperatorErrorMessageGenerator.err_unsupported_filter_type(list, [1, 2, 3]),
+        "Unsupported filter value type: <class 'list'>"
     ),
     # # logical operators
     (
         {"$or": [{"id": 1}]},
-        OperatorErrorMessageGenerator.err_logical_operands("$or", [{"id": 1}]),
+        "Expected a list of atleast two operands for operator='$or', but got operands=[{'id': 1}]"
     ),
     (
         {"$and": "adam"},
-        OperatorErrorMessageGenerator.err_logical_operands("$and", "adam"),
+        "Expected a list of atleast two operands for operator='$and', but got operands='adam'"
     ),
     # # contains operator
     (
         {"tags": {"$contains": ""}},
-        OperatorErrorMessageGenerator.err_contains("$contains", ""),
+        "Expected a non-empty string operand for operator='$contains', but got operands=''"
     ),
     (
         {"tags": {"$contains": 5}},
-        OperatorErrorMessageGenerator.err_contains("$contains", 5),
+        "Expected a non-empty string operand for operator='$contains', but got operands=5"
     ),
     # # like operator
     (
         {"name": {"$like": False}},
-        OperatorErrorMessageGenerator.err_like("$like", False),
+        "Expected a string operand for operator='$like', but got operands=False"
     ),
     # between operator
     (
         {"id": {"$between": [1]}},
-        OperatorErrorMessageGenerator.err_between_length("$between", [1]),
+        "Expected a list of two operands for operator='$between', but got operands=[1]"
     ),
     (
         {"id": {"$between": [1, "2"]}},
-        OperatorErrorMessageGenerator.err_between_type_match("$between", [1, "2"]),
+        "Expected operands of the same type for operator='$between', but got operands=[1, '2']"
     ),
     (
         {"id": {"$between": [False, True]}},
-        OperatorErrorMessageGenerator.err_between_allowed_types("$between", [False, True]),
+        "Expected a list of (int, float, str, date) for operator='$between', but got operands=[False, True]"
     ),
     # in operators
     (
         {"name": {"$in": []}},
-        OperatorErrorMessageGenerator.err_in_non_empty("$in", []),
+        "Expected a non-empty list of operands for operator='$in', but got operands=[]"
     ),
     (
         {"name": {"$in": ["adam", 1]}},
-        OperatorErrorMessageGenerator.err_in_type_match("$in", ["adam", 1]),
+        "Expected operands of the same type for operator='$in', but got operands=['adam', 1]"
     ),
     (
         {"name": {"$in": {"unexpected": "dict"}}},
-        OperatorErrorMessageGenerator.err_in_non_empty("$in", {"unexpected": "dict"}),
+        "Expected a non-empty list of operands for operator='$in', but got operands={'unexpected': 'dict'}"
     ),
     (
         {"name": {"$nin": []}},
-        OperatorErrorMessageGenerator.err_in_non_empty("$nin", []),
+        "Expected a non-empty list of operands for operator='$nin', but got operands=[]"
     ),
     (
         {"name": {"$nin": ["adam", 1]}},
-        OperatorErrorMessageGenerator.err_in_type_match("$nin", ["adam", 1]),
+        "Expected operands of the same type for operator='$nin', but got operands=['adam', 1]"
     ),
     (
         {"name": {"$nin": {"unexpected": "dict"}}},
-        OperatorErrorMessageGenerator.err_in_non_empty("$nin", {"unexpected": "dict"}),
+        "Expected a non-empty list of operands for operator='$nin', but got operands={'unexpected': 'dict'}" 
     ),
     # eq and ne operators
     (
         {"name": ["unexpected", "list"]},
-        OperatorErrorMessageGenerator.err_unsupported_filter_type(list, ["unexpected", "list"]),
+        "Unsupported filter value type: <class 'list'>"
     ),
     (
         {"name": {"$eq": ["unexpected", "list"]}},
-        OperatorErrorMessageGenerator.err_eq_ne("$eq", ["unexpected", "list"]),
+        "Expected a (int, float, str, bool, date, None) for operator='$eq', but got operands=['unexpected', 'list']"
     ),
     (
         {"name": {"$ne": {"unexpected": "dict"}}},
-        OperatorErrorMessageGenerator.err_eq_ne("$ne", {"unexpected": "dict"}),
+        "Expected a (int, float, str, bool, date, None) for operator='$ne', but got operands={'unexpected': 'dict'}" 
     ),
     # gt, gte, lt, lte operators
     (
         {"name": {"$gt": ["unexpected", "list"]}},
-        OperatorErrorMessageGenerator.err_comparison("$gt", ["unexpected", "list"]),
+        "Expected a (int, float, str, date) for operator='$gt', but got operands=['unexpected', 'list']"
     ),
     (
         {"name": {"$gte": False}},
-        OperatorErrorMessageGenerator.err_comparison("$gte", False),
+        "Expected a (int, float, str, date) for operator='$gte', but got operands=False"
     ),
     (
         {"name": {"$lt": ["unexpected", "list"]}},
-        OperatorErrorMessageGenerator.err_comparison("$lt", ["unexpected", "list"]),
+        "Expected a (int, float, str, date) for operator='$lt', but got operands=['unexpected', 'list']"
     ),
     (
         {"name": {"$lte": True}},
-        OperatorErrorMessageGenerator.err_comparison("$lte", True),
+        "Expected a (int, float, str, date) for operator='$lte', but got operands=True" 
     ),
 ]
     
