@@ -105,44 +105,6 @@ class CreateWhereClause:
             "AND", statements
         ), parameters
     
-    def _validate_logical_operation(self, operator: str, operands: Any) -> None:
-        if operator not in LOGICAL_OPERATORS_TO_SQL:
-            raise ValueError(f"operator {operator=} not in {LOGICAL_OPERATORS_TO_SQL.keys()=}")
-        if not isinstance(operands, list) or len(operands) < 2:
-            raise ValueError(f"Expected a list of atleast two operands for {operator=}, but got {operands=}")
-        
-    def _validate_column_operation(self, operator: str, operands: Any) -> None:
-        if operator not in COLUMN_OPERATORS:
-            raise ValueError(f"operator {operator=} not in {COLUMN_OPERATORS.keys()=}")
-        if operator == CONTAINS_OPERATOR:
-            if not isinstance(operands, str) or not operands:
-                raise ValueError(f"Expected a non-empty string operand for {operator=}, but got {operands=}")
-        elif operator == LIKE_OPERATOR:
-            if not isinstance(operands, str):
-                raise ValueError(f"Expected a string operand for {operator=}, but got {operands=}")
-        elif operator == BETWEEN_OPERATOR:
-            if not isinstance(operands, list) or len(operands) != 2:
-                raise ValueError(f"Expected a list of two operands for {operator=}, but got {operands=}")
-            if type(operands[0]) != type(operands[1]):
-                raise ValueError(f"Expected operands of the same type for {operator=}, but got {operands=}")
-            if isinstance(operands[0], bool) or not (isinstance(operands[0], (int, float, str)) or is_date_value(operands[0])):
-                raise ValueError(f"Expected a list of (int, float, str, date) for {operator=}, but got {operands=}")
-        elif operator in IN_OPERATORS_TO_SQL:
-            if not isinstance(operands, list) or len(operands) == 0:
-                raise ValueError(f"Expected a non-empty list of operands for {operator=}, but got {operands=}")
-            check_type = {type(operand) for operand in operands}
-            if len(check_type) > 1:
-                raise ValueError(f"Expected operands of the same type for {operator=}, but got {operands=}")
-            if not (list(check_type)[0] in (int, float, str, bool) or all(is_date_value(operand) for operand in operands)):
-                raise ValueError(f"Expected a list of (int, float, str, bool, date) for {operator=}, but got {operands=}")
-        
-        if operator in ("$eq", "$ne"):
-                if not (isinstance(operands, (int, float, str, bool)) or is_date_value(operands) or operands is None):
-                    raise ValueError(f"Expected a (int, float, str, bool, date, None) for {operator=}, but got {operands=}")
-        if operator in ("$gt", "$gte", "$lt", "$lte"):
-            if  isinstance(operands, bool) or not (isinstance(operands, (int, float, str)) or is_date_value(operands)):
-                raise ValueError(f"Expected a (int, float, str, date) for {operator=}, but got {operands=}")
-
     def _sql_serialize_column_operation(
         self, column: str, operator: str, operands: any
     ) -> Tuple[str, List]:
