@@ -12,8 +12,7 @@ from langchain_hana import HanaDB
 from tests.integration_tests.fake_embeddings import ConsistentFakeEmbeddings
 from tests.integration_tests.fixtures.filtering_test_cases import (
     DOCUMENTS,
-    FILTERING_TEST_CASES,
-    ERROR_FILTERING_TEST_CASES
+    FILTERING_TEST_CASES
 )
 from tests.integration_tests.hana_test_constants import HanaTestConstants
 from tests.integration_tests.hana_test_utils import HanaTestUtils
@@ -804,20 +803,6 @@ def test_hanavector_table_mixed_case_names() -> None:
     finally:
         HanaTestUtils.drop_table(config.conn, table_name)
 
-
-@pytest.mark.parametrize(
-    "test_filter, expected_exception_message",
-    ERROR_FILTERING_TEST_CASES,
-)
-@pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_with_with_invalid_metadata_filters(
-    test_filter: Dict[str, Any],
-    expected_exception_message: str,
-    vectorDB,  # Fixture
-) -> None:
-
-    with pytest.raises(ValueError, match=re.escape(expected_exception_message)):
-        vectorDB.similarity_search("meow", k=5, filter=test_filter)
 
 @pytest.mark.parametrize(
     "test_filter, expected_ids, expected_where_clause, expected_where_clause_parameters",

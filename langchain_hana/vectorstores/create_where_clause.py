@@ -70,8 +70,8 @@ class CreateWhereClause:
         for key, value in filter.items():
             if key.startswith("$"):
                 # Generic filter objects may only have logical operators.
-                # validation before calling serialization
-                self._validate_logical_operation(key, value)
+                if key not in LOGICAL_OPERATORS_TO_SQL:
+                    raise ValueError(f"Unexpected operator {key=} in {filter=}")
                 ret_sql_clause, ret_query_tuple = self._sql_serialize_logical_operation(
                     key, value
                 )
@@ -84,8 +84,6 @@ class CreateWhereClause:
                             f", but got {value=}"
                         )
                     operator, operands = list(value.items())[0]
-                    # validation before calling serialization
-                    self._validate_column_operation(operator, operands)
                     ret_sql_clause, ret_query_tuple = (
                         self._sql_serialize_column_operation(key, operator, operands)
                     )
@@ -148,6 +146,13 @@ class CreateWhereClause:
     def _sql_serialize_column_operation(
         self, column: str, operator: str, operands: any
     ) -> Tuple[str, List]:
+        if operator in LOGICAL_OPERATORS_TO_SQL:
+            raise ValueError(
+                f"Did not expect oerator from {LOGICAL_OPERATORS_TO_SQL=}"
+                f", but got {operator=}"
+            )
+        if operator not in COLUMN_OPERATORS:
+            raise ValueError(f"{operator=} not in {COLUMN_OPERATORS.keys()=}")
         if operator == CONTAINS_OPERATOR:
             placeholder, value = CreateWhereClause._determine_typed_sql_placeholder(
                 operands
@@ -159,6 +164,8 @@ class CreateWhereClause:
         sql_operator = COLUMN_OPERATORS[operator]
         selector = self._create_selector(column)
         if operator == BETWEEN_OPERATOR:
+            if len(operands) != 2:
+                raise ValueError(f"Expected 2 operands, but got {operands=}")
             from_placeholder, from_value = (
                 CreateWhereClause._determine_typed_sql_placeholder(operands[0])
             )
@@ -170,6 +177,8 @@ class CreateWhereClause:
             )
             return statement, [from_value, to_value]
         if operator in IN_OPERATORS_TO_SQL:
+            if not isinstance(operands, list):
+                raise ValueError(f"Expected a list, but got {operands=}")
             placeholder_value_list = [
                 CreateWhereClause._determine_typed_sql_placeholder(item)
                 for item in operands
@@ -230,6 +239,13 @@ class CreateWhereClause:
     def _sql_serialize_logical_operation(
         self, operator: str, operands: List
     ) -> Tuple[str, List]:
+        if not isinstance(operands, list):
+            raise ValueError(f"Unexpected operands for {operator=}: {operands=}")
+        if operator not in LOGICAL_OPERATORS_TO_SQL:
+            raise ValueError(
+                f"Expected operator from {LOGICAL_OPERATORS_TO_SQL=}"
+                f", but got {operator=}"
+            )
         sql_clauses, query_tuple = [], []
         for operand in operands:
             ret_sql_clause, ret_query_tuple = self._create_where_clause(operand)
