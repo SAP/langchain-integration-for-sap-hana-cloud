@@ -443,7 +443,7 @@ def test_hanavector_similarity_search_with_metadata_filter_invalid_type(
     exception_occured = False
     try:
         vectorDB.similarity_search(
-            HanaTestConstants.TEXTS[0], 3, filter={"wrong_type": 0.1}
+            HanaTestConstants.TEXTS[0], 3, filter={"wrong_type": [0.1]}
         )
     except ValueError:
         exception_occured = True

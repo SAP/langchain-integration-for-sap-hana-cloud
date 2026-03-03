@@ -23,6 +23,8 @@ LIKE_OPERATOR = "$like"
 
 CONTAINS_OPERATOR = "$contains"
 
+def is_date_value(value: Any) -> bool:
+    return isinstance(value, dict) and ("type" in value) and (value["type"] == "date")
 
 class ContainsNeedsSpecialSqlSyntax:
     def __repr__(self) -> None:  # type: ignore[override]
@@ -74,8 +76,6 @@ class CreateWhereClause:
                     key, value
                 )
             else:
-                if not isinstance(value, (bool, int, str, dict)):
-                    raise ValueError(f"Unsupported filter value type: {type(value)}")
                 if isinstance(value, dict) and "type" not in value:
                     # Value is an operator.
                     if len(value) != 1:
@@ -87,7 +87,13 @@ class CreateWhereClause:
                     ret_sql_clause, ret_query_tuple = (
                         self._sql_serialize_column_operation(key, operator, operands)
                     )
+                elif value is None:
+                    # Value is plain NULL.
+                    ret_sql_clause = f"{self._create_selector(key)} IS NULL"
+                    ret_query_tuple = []
                 else:
+                    # Value represents a typed SQL value.
+                    # _determine_typed_sql_placeholder throws for illegal types.
                     placeholder, value = (
                         CreateWhereClause._determine_typed_sql_placeholder(value)
                     )
@@ -102,11 +108,6 @@ class CreateWhereClause:
     def _sql_serialize_column_operation(
         self, column: str, operator: str, operands: any
     ) -> Tuple[str, List]:
-        if operator in LOGICAL_OPERATORS_TO_SQL:
-            raise ValueError(
-                f"Did not expect oerator from {LOGICAL_OPERATORS_TO_SQL=}"
-                f", but got {operator=}"
-            )
         if operator not in COLUMN_OPERATORS:
             raise ValueError(f"{operator=} not in {COLUMN_OPERATORS.keys()=}")
         if operator == CONTAINS_OPERATOR:
@@ -143,6 +144,13 @@ class CreateWhereClause:
             values = [item[1] for item in placeholder_value_list]
             statement = f"{selector} {sql_operator} ({placeholders})"
             return statement, values
+        # Allow null checks for equality operators.
+        if operator == "$eq" and operands is None:
+            statement = f"{selector} IS NULL"
+            return statement, []
+        elif operator == "$ne" and operands is None:
+            statement = f"{selector} IS NOT NULL"
+            return statement, []
         # Default behavior for single value operators.
         placeholder, value = CreateWhereClause._determine_typed_sql_placeholder(
             operands
@@ -160,19 +168,15 @@ class CreateWhereClause:
             return "TO_BOOLEAN(?)", "true" if value else "false"
         if the_type in (int, float):
             return "TO_DOUBLE(?)", value
-        
-        # Do not accept empty values.
-        if not value:
-            raise ValueError("No operands provided")
+        if the_type is str:
+            return "TO_NVARCHAR(?)", value
 
         # Handle container types: only allowed for dates.
-        if isinstance(value, dict) and ("type" in value) and (value["type"] == "date"):
+        if is_date_value(value):
             return "TO_DATE(?)", value["date"]
-        if isinstance(value, (dict, list, tuple)):
-            raise ValueError(f"Cannot handle {value=}")
         
-        logger.warning(f"Plain SQL Placeholder '?' for {value=}")
-        return "?", value
+        # If we reach this point, the value type is not supported.
+        raise ValueError(f"Unsupported filter value type: {the_type}, value: {value}")
 
     @staticmethod
     def _sql_serialize_logical_clauses(
@@ -192,13 +196,13 @@ class CreateWhereClause:
     def _sql_serialize_logical_operation(
         self, operator: str, operands: List
     ) -> Tuple[str, List]:
-        if not isinstance(operands, list):
-            raise ValueError(f"Unexpected operands for {operator=}: {operands=}")
         if operator not in LOGICAL_OPERATORS_TO_SQL:
             raise ValueError(
                 f"Expected operator from {LOGICAL_OPERATORS_TO_SQL=}"
                 f", but got {operator=}"
             )
+        if not isinstance(operands, list):
+            raise ValueError(f"Unexpected operands for {operator=}: {operands=}")
         sql_clauses, query_tuple = [], []
         for operand in operands:
             ret_sql_clause, ret_query_tuple = self._create_where_clause(operand)

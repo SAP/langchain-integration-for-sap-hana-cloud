@@ -2,6 +2,7 @@
 
 from langchain_core.documents import Document
 
+
 metadatas = [
     {
         "name": "adam",
@@ -56,12 +57,26 @@ TYPE_1_FILTERING_TEST_CASES = [
         "WHERE JSON_VALUE(VEC_META, '$.id') = TO_DOUBLE(?)",
         [1],
     ),
+    # NULL filtering check
+    (
+        {"happiness": None},
+        [3],
+        "WHERE JSON_VALUE(VEC_META, '$.happiness') IS NULL",
+        [],
+    ),
     # String field
     (
         {"name": "adam"},
         [1],
-        "WHERE JSON_VALUE(VEC_META, '$.name') = ?",
+        "WHERE JSON_VALUE(VEC_META, '$.name') = TO_NVARCHAR(?)",
         ["adam"],
+    ),
+    # String field (empty string) Issue #66
+    (
+        {"name": ""},
+        [],
+        "WHERE JSON_VALUE(VEC_META, '$.name') = TO_NVARCHAR(?)",
+        [""],
     ),
     # Boolean fields
     (
@@ -93,18 +108,32 @@ TYPE_1_FILTERING_TEST_CASES = [
 
 TYPE_2_FILTERING_TEST_CASES = [
     # These involve equality checks and other operators
-    # like $ne, $gt, $gte, $lt, $lte, $not
+    # like $ne, $gt, $gte, $lt, $lte
     (
         {"id": 1},
         [1],
         "WHERE JSON_VALUE(VEC_META, '$.id') = TO_DOUBLE(?)",
         [1],
     ),
+    # $eq with None value
+    (
+        {"happiness": {"$eq": None}},
+        [3],
+        "WHERE JSON_VALUE(VEC_META, '$.happiness') IS NULL",
+        [],
+    ),
     (
         {"id": {"$ne": 1}},
         [2, 3],
         "WHERE JSON_VALUE(VEC_META, '$.id') <> TO_DOUBLE(?)",
         [1],
+    ),
+    # $ne with None value
+    (
+        {"sadness": {"$ne": None}},
+        [1, 2],
+        "WHERE JSON_VALUE(VEC_META, '$.sadness') IS NOT NULL",
+        [],
     ),
     (
         {"id": {"$gt": 0}},
@@ -140,50 +169,50 @@ TYPE_2_FILTERING_TEST_CASES = [
     (
         {"name": "adam"},
         [1],
-        "WHERE JSON_VALUE(VEC_META, '$.name') = ?",
+        "WHERE JSON_VALUE(VEC_META, '$.name') = TO_NVARCHAR(?)",
         ["adam"],
     ),
     (
         {"name": "bob"},
         [2],
-        "WHERE JSON_VALUE(VEC_META, '$.name') = ?",
+        "WHERE JSON_VALUE(VEC_META, '$.name') = TO_NVARCHAR(?)",
         ["bob"],
     ),
     (
         {"name": {"$eq": "adam"}},
         [1],
-        "WHERE JSON_VALUE(VEC_META, '$.name') = ?",
+        "WHERE JSON_VALUE(VEC_META, '$.name') = TO_NVARCHAR(?)",
         ["adam"],
     ),
     (
         {"name": {"$ne": "adam"}},
         [2, 3],
-        "WHERE JSON_VALUE(VEC_META, '$.name') <> ?",
+        "WHERE JSON_VALUE(VEC_META, '$.name') <> TO_NVARCHAR(?)",
         ["adam"],
     ),
     # And also gt, gte, lt, lte relying on lexicographical ordering
     (
         {"name": {"$gt": "jane"}},
         [],
-        "WHERE JSON_VALUE(VEC_META, '$.name') > ?",
+        "WHERE JSON_VALUE(VEC_META, '$.name') > TO_NVARCHAR(?)",
         ["jane"],
     ),
     (
         {"name": {"$gte": "jane"}},
         [3],
-        "WHERE JSON_VALUE(VEC_META, '$.name') >= ?",
+        "WHERE JSON_VALUE(VEC_META, '$.name') >= TO_NVARCHAR(?)",
         ["jane"],
     ),
     (
         {"name": {"$lt": "jane"}},
         [1, 2],
-        "WHERE JSON_VALUE(VEC_META, '$.name') < ?",
+        "WHERE JSON_VALUE(VEC_META, '$.name') < TO_NVARCHAR(?)",
         ["jane"],
     ),
     (
         {"name": {"$lte": "jane"}},
         [1, 2, 3],
-        "WHERE JSON_VALUE(VEC_META, '$.name') <= ?",
+        "WHERE JSON_VALUE(VEC_META, '$.name') <= TO_NVARCHAR(?)",
         ["jane"],
     ),
     (
@@ -205,6 +234,12 @@ TYPE_2_FILTERING_TEST_CASES = [
         ["true"],
     ),
     # Test float column.
+    (
+        {"height": 5.7},
+        [2],
+        "WHERE JSON_VALUE(VEC_META, '$.height') = TO_DOUBLE(?)",
+        [5.7],
+    ),
     (
         {"height": {"$gt": 0.0}},
         [1, 2, 3],
@@ -248,7 +283,7 @@ TYPE_3_FILTERING_TEST_CASES = [
     (
         {"$or": [{"id": 1}, {"name": "bob"}]},
         [1, 2],
-        "WHERE (JSON_VALUE(VEC_META, '$.id') = TO_DOUBLE(?)) OR (JSON_VALUE(VEC_META, '$.name') = ?)",
+        "WHERE (JSON_VALUE(VEC_META, '$.id') = TO_DOUBLE(?)) OR (JSON_VALUE(VEC_META, '$.name') = TO_NVARCHAR(?))",
         [1, "bob"],
     ),
     (
@@ -269,13 +304,13 @@ TYPE_4_FILTERING_TEST_CASES = [
     # These involve special operators like $in, $nin, $between
     # Test between
     (
-        {"id": {"$between": (1, 2)}},
+        {"id": {"$between": [1, 2]}},
         [1, 2],
         "WHERE JSON_VALUE(VEC_META, '$.id') BETWEEN TO_DOUBLE(?) AND TO_DOUBLE(?)",
         [1, 2],
     ),
     (
-        {"id": {"$between": (1, 1)}},
+        {"id": {"$between": [1, 1]}},
         [1],
         "WHERE JSON_VALUE(VEC_META, '$.id') BETWEEN TO_DOUBLE(?) AND TO_DOUBLE(?)",
         [1, 1],
@@ -283,7 +318,7 @@ TYPE_4_FILTERING_TEST_CASES = [
     (
         {"name": {"$in": ["adam", "bob"]}},
         [1, 2],
-        "WHERE JSON_VALUE(VEC_META, '$.name') IN (?, ?)",
+        "WHERE JSON_VALUE(VEC_META, '$.name') IN (TO_NVARCHAR(?), TO_NVARCHAR(?))",
         ["adam", "bob"],
     ),
 ]
@@ -293,7 +328,7 @@ TYPE_4B_FILTERING_TEST_CASES = [
     (
         {"name": {"$nin": ["adam", "bob"]}},
         [3],
-        "WHERE JSON_VALUE(VEC_META, '$.name') NOT IN (?, ?)",
+        "WHERE JSON_VALUE(VEC_META, '$.name') NOT IN (TO_NVARCHAR(?), TO_NVARCHAR(?))",
         ["adam", "bob"],
     ),
 ]
@@ -304,13 +339,13 @@ TYPE_5_FILTERING_TEST_CASES = [
     (
         {"name": {"$like": "a%"}},
         [1],
-        "WHERE JSON_VALUE(VEC_META, '$.name') LIKE ?",
+        "WHERE JSON_VALUE(VEC_META, '$.name') LIKE TO_NVARCHAR(?)",
         ["a%"],
     ),
     (
         {"name": {"$like": "%a%"}},  # adam and jane
         [1, 3],
-        "WHERE JSON_VALUE(VEC_META, '$.name') LIKE ?",
+        "WHERE JSON_VALUE(VEC_META, '$.name') LIKE TO_NVARCHAR(?)",
         ["%a%"],
     ),
 ]
