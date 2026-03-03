@@ -108,11 +108,6 @@ class CreateWhereClause:
     def _sql_serialize_column_operation(
         self, column: str, operator: str, operands: any
     ) -> Tuple[str, List]:
-        if operator in LOGICAL_OPERATORS_TO_SQL:
-            raise ValueError(
-                f"Did not expect oerator from {LOGICAL_OPERATORS_TO_SQL=}"
-                f", but got {operator=}"
-            )
         if operator not in COLUMN_OPERATORS:
             raise ValueError(f"{operator=} not in {COLUMN_OPERATORS.keys()=}")
         if operator == CONTAINS_OPERATOR:
@@ -201,13 +196,13 @@ class CreateWhereClause:
     def _sql_serialize_logical_operation(
         self, operator: str, operands: List
     ) -> Tuple[str, List]:
-        if not isinstance(operands, list):
-            raise ValueError(f"Unexpected operands for {operator=}: {operands=}")
         if operator not in LOGICAL_OPERATORS_TO_SQL:
             raise ValueError(
                 f"Expected operator from {LOGICAL_OPERATORS_TO_SQL=}"
                 f", but got {operator=}"
             )
+        if not isinstance(operands, list):
+            raise ValueError(f"Unexpected operands for {operator=}: {operands=}")
         sql_clauses, query_tuple = [], []
         for operand in operands:
             ret_sql_clause, ret_query_tuple = self._create_where_clause(operand)
