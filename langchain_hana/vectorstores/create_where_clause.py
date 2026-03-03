@@ -104,7 +104,7 @@ class CreateWhereClause:
         return CreateWhereClause._sql_serialize_logical_clauses(
             "AND", statements
         ), parameters
-    
+
     def _sql_serialize_column_operation(
         self, column: str, operator: str, operands: any
     ) -> Tuple[str, List]:
