@@ -540,6 +540,7 @@ class HanaDB(VectorStore):
         texts: Iterable[str],
         metadatas: Optional[list[dict]] = None,
         embeddings: Optional[list[list[float]]] = None,
+        use_map_merge: bool = False,
         **kwargs: Any,
     ) -> list[str]:
         """Add texts to the vectorstore.
@@ -558,10 +559,16 @@ class HanaDB(VectorStore):
         # decide how to add texts
         # using external embedding instance or internal embedding function of HanaDB
         if self.use_internal_embeddings:
+            if use_map_merge:
+                return self._add_texts_with_map_merge_using_internal_embedding(
+                    texts, metadatas, embeddings
+                )
             return self._add_texts_using_internal_embedding(
                 texts, metadatas, embeddings
             )
         else:
+            if use_map_merge:
+                raise ValueError("map merge cannot be used with external embeddings")
             return self._add_texts_using_external_embedding(
                 texts, metadatas, embeddings
             )
@@ -661,6 +668,140 @@ class HanaDB(VectorStore):
             cur.close()
         return []
 
+    def _add_texts_with_map_merge_using_internal_embedding(
+        self,
+        texts: Iterable[str],
+        metadatas: Optional[list[dict]] = None,
+        embeddings: Optional[list[list[float]]] = None,
+        **kwargs: Any,
+    ) -> list[str]:
+        """Add texts with map merge insertion using internal embedding function"""
+
+        cur = self.connection.cursor()
+
+        create_temp_table_sql = f'''
+        CREATE TABLE {self.table_name}_TEMP (
+            ID INT PRIMARY KEY,
+            "VEC_TEXT" NCLOB,
+            "VEC_VECTOR" {self.vector_column_type}
+        )
+        '''
+
+        try:
+            cur.execute(create_temp_table_sql)
+        except Exception as e:
+            raise Exception(f"Error while creating table for map merge :{e}")
+        
+        insert_temp_table_sql = f'''
+        INSERT INTO {self.table_name}_TEMP (ID, "VEC_TEXT", "VEC_VECTOR")
+        VALUES (?,?,NULL)
+        '''
+
+        try:
+            cur.executemany(insert_temp_table_sql, [(i, text) for i,text in enumerate(texts)])
+        except Exception as e:
+            raise Exception(f"Error while inserting rows for map merge :{e}")
+        
+        if self.internal_embedding_remote_source:
+            vector_embedding_sql = f"""VECTOR_EMBEDDING(:i_text, 'DOCUMENT', '{self.internal_embedding_model_id}', "{self.internal_embedding_remote_source}")"""
+        else:
+            vector_embedding_sql = f"""VECTOR_EMBEDDING(:i_text, 'DOCUMENT', '{self.internal_embedding_model_id}')"""
+        vector_embedding_sql = self._convert_vector_embedding_to_column_type(
+            vector_embedding_sql
+        )
+        
+        create_map_merge_function_sql = f"""
+        CREATE OR REPLACE FUNCTION F_VECTOR_EMBEDDING(
+                IN i_id INT,
+                IN i_text NCLOB
+            )
+            RETURNS TABLE("ID" INT, "PAL_EMBEDDING" {self.vector_column_type})
+            LANGUAGE SQLSCRIPT READS SQL DATA AS
+            BEGIN
+                RETURN 
+                    SELECT :i_id AS "ID", 
+                        {vector_embedding_sql} AS "PAL_EMBEDDING"
+                    FROM DUMMY;
+            END;
+         """
+        
+        try:
+            cur.execute(create_map_merge_function_sql)
+        except Exception as e:
+            raise Exception(f"Error while creating map merge function :{e}")
+        
+        call_map_merge_sql = f"""
+            DO()
+            BEGIN
+                dat = SELECT "ID", "VEC_TEXT", "VEC_VECTOR" FROM "{self.table_name}_TEMP";
+                o_res = MAP_MERGE(:dat, "F_VECTOR_EMBEDDING"(:dat."ID", :dat."VEC_TEXT"));
+                MERGE INTO "{self.table_name}_TEMP" AS dat
+                USING :o_res AS upd
+                ON dat."ID" = upd."ID"
+                WHEN MATCHED THEN
+                    UPDATE SET dat."VEC_VECTOR" = upd."PAL_EMBEDDING";
+            END;
+        """
+
+        try:
+            cur.execute(call_map_merge_sql)
+        except Exception as e:
+            raise Exception(f"Error while calling map merge function :{e}")
+        
+
+        fetch_embeddings_sql = f"""
+        SELECT VEC_VECTOR FROM {self.table_name}_TEMP
+        """
+        try:
+            cur.execute(fetch_embeddings_sql)
+            rows = cur.fetchall()
+            embeddings = [row[0] for row in rows]
+        except Exception as e:
+            raise Exception(f"Error while fetching embeddings :{e}")
+        
+
+        try:
+            cur.execute(f"DROP FUNCTION F_VECTOR_EMBEDDING")
+            cur.execute(f"DROP TABLE {self.table_name}_TEMP")
+        except Exception as e:
+            raise Exception(f"Error while dropping temp table/function :{e}")
+
+
+        sql_params = []
+        for i, text in enumerate(texts):
+            metadata = metadatas[i] if metadatas else {}
+            metadata, extracted_special_metadata = self._split_off_special_metadata(
+                metadata
+            )
+            sql_params.append(
+                (
+                    text,
+                    json.dumps(
+                    HanaDB._sanitize_metadata_keys(metadata)
+                    ),
+                    embeddings[i],
+                    *extracted_special_metadata
+                )
+            )
+
+        specific_metadata_columns_string = self._get_specific_metadata_columns_string()
+
+        sql_str = (
+            f'INSERT INTO "{self.table_name}" ("{self.content_column}", '
+            f'"{self.metadata_column}", '
+            f'"{self.vector_column}"{specific_metadata_columns_string}) '
+            f"VALUES (?, ?, ? "
+            f"{(', ?'* len(self.specific_metadata_columns))});"
+        )
+
+        # Insert data into the table
+        cur = self.connection.cursor()
+        try:
+            cur.executemany(sql_str, sql_params)
+        finally:
+            cur.close()
+        return []
+
     def _get_specific_metadata_columns_string(self) -> str:
         """
         Helper function to generate the specific metadata columns as a SQL string.
@@ -685,6 +826,7 @@ class HanaDB(VectorStore):
         vector_column: str = default_vector_column,
         vector_column_length: int = default_vector_column_length,
         vector_column_type: str = default_vector_column_type,
+        use_map_merge: bool = False,
         *,
         specific_metadata_columns: Optional[list[str]] = None,
     ):
@@ -708,7 +850,7 @@ class HanaDB(VectorStore):
             vector_column_type=vector_column_type,
             specific_metadata_columns=specific_metadata_columns,
         )
-        instance.add_texts(texts, metadatas)
+        instance.add_texts(texts, metadatas, use_map_merge=use_map_merge)
         return instance
 
     def similarity_search(  # type: ignore[override]
