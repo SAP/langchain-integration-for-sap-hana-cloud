@@ -380,7 +380,7 @@ ERROR_FILTERING_TEST_CASES = [
     # plain value is not supported
     (
         {"name": ["abcd"]},
-        "Unsupported filter value type: <class 'list'>"
+        "Invalid filter value with key='name', value=['abcd']"
     ),
     # # logical operators
     (
@@ -444,10 +444,6 @@ ERROR_FILTERING_TEST_CASES = [
         "Expected a non-empty list of operands for operator='$nin', but got operands={'unexpected': 'dict'}" 
     ),
     # eq and ne operators
-    (
-        {"name": ["unexpected", "list"]},
-        "Unsupported filter value type: <class 'list'>"
-    ),
     (
         {"name": {"$eq": ["unexpected", "list"]}},
         "Expected a (int, float, str, bool, date, None) for operator='$eq', but got operands=['unexpected', 'list']"
