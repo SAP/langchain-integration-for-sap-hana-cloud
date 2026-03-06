@@ -25,8 +25,6 @@ from langchain_core.vectorstores.utils import maximal_marginal_relevance
 
 from langchain_hana.embeddings import HanaInternalEmbeddings
 from langchain_hana.vectorstores.create_where_clause import (
-    CONTAINS_OPERATOR,
-    LOGICAL_OPERATORS_TO_SQL,
     CreateWhereClause,
 )
 from langchain_hana.utils import DistanceStrategy, _validate_k, _validate_k_and_fetch_k
@@ -947,14 +945,14 @@ class HanaDB(VectorStore):
         """
         if isinstance(filter_obj, dict):
             for key, value in filter_obj.items():
-                if key == CONTAINS_OPERATOR:
+                if key == "$contains":
                     # Add the parent key as it's the metadata column being filtered
                     if parent_key and not (
                         parent_key == self.content_column
                         or parent_key in self.specific_metadata_columns
                     ):
                         keyword_columns.add(parent_key)
-                elif key in LOGICAL_OPERATORS_TO_SQL:  # Handle logical operators
+                elif key in ("$and", "$or"):  # Handle logical operators
                     for subfilter in value:
                         self._recurse_filters(keyword_columns, subfilter)
                 else:
