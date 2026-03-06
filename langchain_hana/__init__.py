@@ -3,7 +3,7 @@ from importlib import metadata
 from langchain_hana.chains import HanaSparqlQAChain
 from langchain_hana.embeddings import HanaInternalEmbeddings
 from langchain_hana.graphs import HanaRdfGraph
-from langchain_hana.vectorstores import HanaDB
+from langchain_hana.vectorstores import HanaDB, HanaReranker
 from langchain_hana.structured_query import HanaTranslator
 
 try:
@@ -19,5 +19,6 @@ __all__ = [
     "HanaInternalEmbeddings",
     "HanaRdfGraph",
     "HanaSparqlQAChain",
+    "HanaReranker",
     "__version__",
 ]
