@@ -380,7 +380,7 @@ ERROR_FILTERING_TEST_CASES = [
     # plain value is not supported
     (
         {"name": ["abcd"]},
-        "Cannot deduce SQL operand for ['abcd'], type: <class 'list'>"
+        "Cannot deduce SQL operand for ['abcd']"
     ),
     # # logical operators
     (
@@ -394,38 +394,42 @@ ERROR_FILTERING_TEST_CASES = [
     # # contains operator
     (
         {"tags": {"$contains": ""}},
-        "Expected a non-empty NVARCHAR operand for IN, but got '' (NVARCHAR)"
+        "Expected a non-empty string operand for $contains"
     ),
     (
         {"tags": {"$contains": 5}},
-        "Expected a non-empty NVARCHAR operand for IN, but got 5.0 (DOUBLE)"
+        "Expected a string operand for $contains, but got 5"
     ),
     # # like operator
     (
         {"name": {"$like": False}},
-        "Expected a NVARCHAR operand for LIKE, but got false (BOOLEAN)"
+        "Expected a string operand for $like, but got False"
     ),
     # between operator
     (
         {"id": {"$between": [1]}},
-        "Expected 2 operands for BETWEEN, but got 1"
+        "Expected 2 operands for $between, but got 1"
     ),
     (
         {"id": {"$between": [1, "2"]}},
-        "Expected operands of the same type for BETWEEN, but got [1.0 (DOUBLE), '2' (NVARCHAR)]"
+        "Expected operands of the same type for $between, but got [1, '2']"
+    ),
+    (
+        {"id": {"$between": [1, 2.0]}},
+        "Expected operands of the same type for $between, but got [1, 2.0]"
     ),
     (
         {"id": {"$between": [False, True]}},
-        "Expected operand types ('DOUBLE', 'NVARCHAR', 'DATE') for BETWEEN, but got false (BOOLEAN)"
+        "Expected operand types (int, float, str, date) for $between, but got False"
     ),
     # in operators
     (
         {"name": {"$in": []}},
-        "Expected a non-empty list of operands for IN"
+        "Expected a non-empty list of operands for $in"
     ),
     (
         {"name": {"$in": ["adam", 1]}},
-        "Expected operands of the same type for IN, but got ['adam' (NVARCHAR), 1.0 (DOUBLE)]"
+        "Expected operands of the same type for $in, but got ['adam', 1]"
     ),
     (
         {"name": {"$in": {"unexpected": "dict"}}},
@@ -433,11 +437,11 @@ ERROR_FILTERING_TEST_CASES = [
     ),
     (
         {"name": {"$nin": []}},
-        "Expected a non-empty list of operands for NOT IN"
+        "Expected a non-empty list of operands for $nin"
     ),
     (
         {"name": {"$nin": ["adam", 1]}},
-        "Expected operands of the same type for NOT IN, but got ['adam' (NVARCHAR), 1.0 (DOUBLE)]"
+        "Expected operands of the same type for $nin, but got ['adam', 1]"
     ),
     (
         {"name": {"$nin": {"unexpected": "dict"}}},
@@ -446,27 +450,27 @@ ERROR_FILTERING_TEST_CASES = [
     # eq and ne operators
     (
         {"name": {"$eq": ["unexpected", "list"]}},
-        "Cannot deduce SQL operand for ['unexpected', 'list'], type: <class 'list'>"
+        "Cannot deduce SQL operand for ['unexpected', 'list']"
     ),
     (
         {"name": {"$ne": {"unexpected": "dict"}}},
-        "Cannot deduce SQL operand for {'unexpected': 'dict'}, type: <class 'dict'>" 
+        "Cannot deduce SQL operand for {'unexpected': 'dict'}" 
     ),
     # gt, gte, lt, lte operators
     (
         {"name": {"$gt": ["unexpected", "list"]}},
-        "Cannot deduce SQL operand for ['unexpected', 'list'], type: <class 'list'>"
+        "Cannot deduce SQL operand for ['unexpected', 'list']"
     ),
     (
         {"name": {"$gte": False}},
-        "Expected operand types ('DOUBLE', 'NVARCHAR', 'DATE') for >=, but got false (BOOLEAN)"
+        "Expected operand types (int, float, str, date) for $gte, but got False"
     ),
     (
         {"name": {"$lt": ["unexpected", "list"]}},
-        "Cannot deduce SQL operand for ['unexpected', 'list'], type: <class 'list'>"
+        "Cannot deduce SQL operand for ['unexpected', 'list']"
     ),
     (
         {"name": {"$lte": True}},
-        "Expected operand types ('DOUBLE', 'NVARCHAR', 'DATE') for <=, but got true (BOOLEAN)" 
+        "Expected operand types (int, float, str, date) for $lte, but got True" 
     ),
 ]

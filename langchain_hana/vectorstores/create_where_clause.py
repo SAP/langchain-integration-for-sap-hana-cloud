@@ -35,17 +35,12 @@ class SqlOperand:
                 # There should be no empty date, fall through to ValueError.
         
         # If we reach this point, the value type is not supported.
-        raise ValueError(f"Cannot deduce SQL operand for {value}, type: {the_type}")
+        raise ValueError(f"Cannot deduce SQL operand for {value}")
 
     def __str__(self):
-        if self.the_type == "NVARCHAR":
-            return f"'{self.value}' ({self.the_type})"
-        else:
-            return f"{self.value} ({self.the_type})"
-
-    def __repr__(self):
-        # To get nice printing if inside list.
-        return self.__str__()
+        # We do not want to print internal types.
+        # Users of langchain should see their input value in error messages.
+        assert False
 
 def _determine_sql_operands(operands: list[any]) -> list[SqlOperand]:
     if not isinstance(operands, list):
@@ -126,8 +121,10 @@ class CreateWhereClause:
     ) -> Tuple[str, List]:
         if operator == "$contains":
             sql_operand = SqlOperand(operands)
-            if sql_operand.the_type != "NVARCHAR" or not sql_operand.value:
-                raise ValueError(f"Expected a non-empty NVARCHAR operand for IN, but got {sql_operand}")
+            if not isinstance(operands, str):
+                raise ValueError(f"Expected a string operand for $contains, but got {operands}")
+            if not operands:
+                raise ValueError(f"Expected a non-empty string operand for $contains")
             statement = (
                 f"SCORE({sql_operand.placeholder} IN (\"{column}\" EXACT SEARCH MODE 'text')) > 0"
             )
@@ -136,34 +133,33 @@ class CreateWhereClause:
         if operator == "$like":
             sql_operand = SqlOperand(operands)
             if sql_operand.the_type != "NVARCHAR":
-                raise ValueError(f"Expected a NVARCHAR operand for LIKE, but got {sql_operand}")
+                raise ValueError(f"Expected a string operand for $like, but got {operands}")
             statement = f"{selector} LIKE {sql_operand.placeholder}"
             return statement, [sql_operand.value]
         if operator == "$between":
             sql_operands = _determine_sql_operands(operands)
-            if len(sql_operands) != 2:
-                raise ValueError(f"Expected 2 operands for BETWEEN, but got {len(sql_operands)}")
+            if len(operands) != 2:
+                raise ValueError(f"Expected 2 operands for $between, but got {len(operands)}")
+            if type(operands[0]) is not type(operands[1]):
+                raise ValueError(f"Expected operands of the same type for $between, but got {operands}")
             sql_from, sql_to = sql_operands
-            if sql_from.the_type != sql_to.the_type:
-                raise ValueError(f"Expected operands of the same type for BETWEEN, but got {sql_operands}")
-            allowed_sql_types = ("DOUBLE", "NVARCHAR", "DATE")
-            if sql_from.the_type not in allowed_sql_types:
-                raise ValueError(f"Expected operand types {allowed_sql_types} for BETWEEN, but got {sql_from}")
+            if sql_from.the_type not in ("DOUBLE", "NVARCHAR", "DATE"):
+                raise ValueError(f"Expected operand types (int, float, str, date) for $between, but got {operands[0]}")
             statement = (
                 f"{selector} BETWEEN {sql_from.placeholder} AND {sql_to.placeholder}"
             )
             return statement, [sql_from.value, sql_to.value]
         if operator in ("$in", "$nin"):
+            sql_operator = {
+                "$in": "IN",
+                "$nin": "NOT IN",
+            }[operator]
             sql_operands = _determine_sql_operands(operands)
-            if operator == "$in":
-                sql_operator = "IN"
-            if operator == "$nin":
-                sql_operator = "NOT IN"
-            if len(sql_operands) == 0:
-                raise ValueError(f"Expected a non-empty list of operands for {sql_operator}")
-            for sql_operand in sql_operands:
-                if sql_operand.the_type != sql_operands[0].the_type:
-                    raise ValueError(f"Expected operands of the same type for {sql_operator}, but got {sql_operands}")
+            if len(operands) == 0:
+                raise ValueError(f"Expected a non-empty list of operands for {operator}")
+            for operand in operands:
+                if type(operand) is not type(operands[0]):
+                    raise ValueError(f"Expected operands of the same type for {operator}, but got {operands}")
             sql_placeholders = [sql_operand.placeholder for sql_operand in sql_operands]
             sql_values = [sql_operand.value for sql_operand in sql_operands]
             statement = f"{selector} {sql_operator} ({', '.join(sql_placeholders)})"
@@ -171,17 +167,16 @@ class CreateWhereClause:
         if operator in ("$eq", "$ne"):
             # Allow null checks for equality operators.
             if operands is None:
-                if operator == "$eq":
-                    sql_operator = "IS NULL"
-                if operator == "$ne":
-                    sql_operator = "IS NOT NULL"
-                statement = f"{selector} {sql_operator}"
+                sql_operation = {
+                    "$eq": "IS NULL",
+                    "$ne": "IS NOT NULL",
+                }[operator]
+                statement = f"{selector} {sql_operation}"
                 return statement, []
-            if operator == "$eq":
-                sql_operator = "="
-            else:
-                assert operator == "$ne"
-                sql_operator = "<>"
+            sql_operator = {
+                "$eq": "=",
+                "$ne": "<>",
+            }[operator]
             sql_operand = SqlOperand(operands)
             statement = f"{selector} {sql_operator} {sql_operand.placeholder}"
             return statement, [sql_operand.value]
@@ -193,9 +188,8 @@ class CreateWhereClause:
                 "$lte": "<=",
             }[operator]
             sql_operand = SqlOperand(operands)
-            allowed_sql_types = ("DOUBLE", "NVARCHAR", "DATE")
-            if sql_operand.the_type not in allowed_sql_types:
-                raise ValueError(f"Expected operand types {allowed_sql_types} for {sql_operator}, but got {sql_operand}")
+            if sql_operand.the_type not in ("DOUBLE", "NVARCHAR", "DATE"):
+                raise ValueError(f"Expected operand types (int, float, str, date) for {operator}, but got {operands}")
             statement = f"{selector} {sql_operator} {sql_operand.placeholder}"
             return statement, [sql_operand.value]
         
