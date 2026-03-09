@@ -380,93 +380,93 @@ ERROR_FILTERING_TEST_CASES = [
     # plain value is not supported
     (
         {"name": ["abcd"]},
-        "Invalid filter value with key='name', value=['abcd']"
+        "Cannot deduce SQL operand for ['abcd'], type: <class 'list'>"
     ),
     # # logical operators
     (
         {"$or": [{"id": 1}]},
-        "Expected a list of atleast two operands for operator='$or', but got operands=[{'id': 1}]"
+        "Expected a list of at least 2 operands for operator='$or', but got 1"
     ),
     (
         {"$and": "adam"},
-        "Expected a list of atleast two operands for operator='$and', but got operands='adam'"
+        "Expected a list of operands for operator='$and', but got adam"
     ),
     # # contains operator
     (
         {"tags": {"$contains": ""}},
-        "Expected a non-empty string operand for operator='$contains', but got operands=''"
+        "Expected a non-empty NVARCHAR operand for IN, but got '' (NVARCHAR)"
     ),
     (
         {"tags": {"$contains": 5}},
-        "Expected a non-empty string operand for operator='$contains', but got operands=5"
+        "Expected a non-empty NVARCHAR operand for IN, but got 5.0 (DOUBLE)"
     ),
     # # like operator
     (
         {"name": {"$like": False}},
-        "Expected a string operand for operator='$like', but got operands=False"
+        "Expected a NVARCHAR operand for LIKE, but got false (BOOLEAN)"
     ),
     # between operator
     (
         {"id": {"$between": [1]}},
-        "Expected a list of two operands for operator='$between', but got operands=[1]"
+        "Expected 2 operands for BETWEEN, but got 1"
     ),
     (
         {"id": {"$between": [1, "2"]}},
-        "Expected operands of the same type for operator='$between', but got operands=[1, '2']"
+        "Expected operands of the same type for BETWEEN, but got [1.0 (DOUBLE), '2' (NVARCHAR)]"
     ),
     (
         {"id": {"$between": [False, True]}},
-        "Expected a list of (int, float, str, date) for operator='$between', but got operands=[False, True]"
+        "Expected operand types ('DOUBLE', 'NVARCHAR', 'DATE') for BETWEEN, but got false (BOOLEAN)"
     ),
     # in operators
     (
         {"name": {"$in": []}},
-        "Expected a non-empty list of operands for operator='$in', but got operands=[]"
+        "Expected a non-empty list of operands for IN"
     ),
     (
         {"name": {"$in": ["adam", 1]}},
-        "Expected operands of the same type for operator='$in', but got operands=['adam', 1]"
+        "Expected operands of the same type for IN, but got ['adam' (NVARCHAR), 1.0 (DOUBLE)]"
     ),
     (
         {"name": {"$in": {"unexpected": "dict"}}},
-        "Expected a non-empty list of operands for operator='$in', but got operands={'unexpected': 'dict'}"
+        "Expected list of operands, but got {'unexpected': 'dict'}"
     ),
     (
         {"name": {"$nin": []}},
-        "Expected a non-empty list of operands for operator='$nin', but got operands=[]"
+        "Expected a non-empty list of operands for NOT IN"
     ),
     (
         {"name": {"$nin": ["adam", 1]}},
-        "Expected operands of the same type for operator='$nin', but got operands=['adam', 1]"
+        "Expected operands of the same type for NOT IN, but got ['adam' (NVARCHAR), 1.0 (DOUBLE)]"
     ),
     (
         {"name": {"$nin": {"unexpected": "dict"}}},
-        "Expected a non-empty list of operands for operator='$nin', but got operands={'unexpected': 'dict'}" 
+        "Expected list of operands, but got {'unexpected': 'dict'}"
     ),
     # eq and ne operators
     (
         {"name": {"$eq": ["unexpected", "list"]}},
-        "Expected a (int, float, str, bool, date, None) for operator='$eq', but got operands=['unexpected', 'list']"
+        "Cannot deduce SQL operand for ['unexpected', 'list'], type: <class 'list'>"
     ),
     (
         {"name": {"$ne": {"unexpected": "dict"}}},
-        "Expected a (int, float, str, bool, date, None) for operator='$ne', but got operands={'unexpected': 'dict'}" 
+        "Cannot deduce SQL operand for {'unexpected': 'dict'}, type: <class 'dict'>" 
     ),
     # gt, gte, lt, lte operators
     (
         {"name": {"$gt": ["unexpected", "list"]}},
-        "Expected a (int, float, str, date) for operator='$gt', but got operands=['unexpected', 'list']"
+        "Cannot deduce SQL operand for ['unexpected', 'list'], type: <class 'list'>"
     ),
     (
         {"name": {"$gte": False}},
-        "Expected a (int, float, str, date) for operator='$gte', but got operands=False"
+        "Expected operand types ('DOUBLE', 'NVARCHAR', 'DATE') for >=, but got false (BOOLEAN)"
     ),
     (
         {"name": {"$lt": ["unexpected", "list"]}},
-        "Expected a (int, float, str, date) for operator='$lt', but got operands=['unexpected', 'list']"
+        "Cannot deduce SQL operand for ['unexpected', 'list'], type: <class 'list'>"
     ),
     (
         {"name": {"$lte": True}},
-        "Expected a (int, float, str, date) for operator='$lte', but got operands=True" 
+        "Expected operand types ('DOUBLE', 'NVARCHAR', 'DATE') for <=, but got true (BOOLEAN)" 
     ),
 ]
