@@ -6,6 +6,25 @@ logger = logging.getLogger(__name__)
 def is_date_value(value: Any) -> bool:
     return isinstance(value, dict) and ("type" in value) and (value["type"] == "date")
 
+def _determine_typed_sql_placeholder(value):  # type: ignore[no-untyped-def]
+
+        the_type = type(value)
+
+        # Handle plain values.
+        if the_type is bool:
+            return "TO_BOOLEAN(?)", "true" if value else "false"
+        if the_type in (int, float):
+            return "TO_DOUBLE(?)", value
+        if the_type is str:
+            return "TO_NVARCHAR(?)", value
+
+        # Handle container types: only allowed for dates.
+        if is_date_value(value):
+            return "TO_DATE(?)", value["date"]
+        
+        # If we reach this point, the value type is not supported.
+        raise ValueError(f"Unsupported filter value type: {the_type}, value: {value}")
+
 class CreateWhereClause:
     def __init__(self, hanaDb: Any) -> None:
         self.specific_metadata_columns = hanaDb.specific_metadata_columns
@@ -57,7 +76,7 @@ class CreateWhereClause:
                 # Value represents a typed SQL value.
                 # _determine_typed_sql_placeholder throws for illegal types.
                 placeholder, value = (
-                    CreateWhereClause._determine_typed_sql_placeholder(value)
+                    _determine_typed_sql_placeholder(value)
                 )
                 ret_sql_clause = f"{self._create_selector(key)} = {placeholder}"
                 ret_query_tuple = [value]
@@ -77,7 +96,7 @@ class CreateWhereClause:
         if operator == "$contains":
             if not isinstance(operands, str) or not operands:
                 raise ValueError(f"Expected a non-empty string operand for {operator=}, but got {operands=}")
-            sql_placeholder, sql_value = CreateWhereClause._determine_typed_sql_placeholder(
+            sql_placeholder, sql_value = _determine_typed_sql_placeholder(
                 operands
             )
             statement = (
@@ -88,7 +107,7 @@ class CreateWhereClause:
         if operator == "$like":
             if not isinstance(operands, str):
                 raise ValueError(f"Expected a string operand for {operator=}, but got {operands=}")
-            sql_placeholder, sql_value = CreateWhereClause._determine_typed_sql_placeholder(
+            sql_placeholder, sql_value = _determine_typed_sql_placeholder(
                 operands
             )
             statement = f"{selector} LIKE {sql_placeholder}"
@@ -101,10 +120,10 @@ class CreateWhereClause:
             if isinstance(operands[0], bool) or not (isinstance(operands[0], (int, float, str)) or is_date_value(operands[0])):
                 raise ValueError(f"Expected a list of (int, float, str, date) for {operator=}, but got {operands=}")
             from_sql_placeholder, from_sql_value = (
-                CreateWhereClause._determine_typed_sql_placeholder(operands[0])
+                _determine_typed_sql_placeholder(operands[0])
             )
             to_sql_placeholder, to_sql_value = (
-                CreateWhereClause._determine_typed_sql_placeholder(operands[1])
+                _determine_typed_sql_placeholder(operands[1])
             )
             statement = (
                 f"{selector} BETWEEN {from_sql_placeholder} AND {to_sql_placeholder}"
@@ -119,7 +138,7 @@ class CreateWhereClause:
             if not (list(check_type)[0] in (int, float, str, bool) or all(is_date_value(operand) for operand in operands)):
                 raise ValueError(f"Expected a list of (int, float, str, bool, date) for {operator=}, but got {operands=}")
             sql_placeholder_value_list = [
-                CreateWhereClause._determine_typed_sql_placeholder(item)
+                _determine_typed_sql_placeholder(item)
                 for item in operands
             ]
             if operator == "$in":
@@ -142,7 +161,7 @@ class CreateWhereClause:
                 statement = f"{selector} {sql_operator}"
                 return statement, []
             sql_operator = "=" if operator == "$eq" else "<>"
-            sql_placeholder, sql_value = CreateWhereClause._determine_typed_sql_placeholder(operands)
+            sql_placeholder, sql_value = _determine_typed_sql_placeholder(operands)
             statement = f"{selector} {sql_operator} {sql_placeholder}"
             return statement, [sql_value]
         if operator in ("$gt", "$gte", "$lt", "$lte"):
@@ -155,32 +174,12 @@ class CreateWhereClause:
                 "$lte": "<=",
             }
             sql_operator = comparisons_to_sql[operator]
-            sql_placeholder, sql_value = CreateWhereClause._determine_typed_sql_placeholder(operands)
+            sql_placeholder, sql_value = _determine_typed_sql_placeholder(operands)
             statement = f"{selector} {sql_operator} {sql_placeholder}"
             return statement, [sql_value]
         
         # Unknown operation if we reach this point.
         raise ValueError(f"Unsupported column operation for {operator=}, {operands=}")
-
-    @staticmethod
-    def _determine_typed_sql_placeholder(value):  # type: ignore[no-untyped-def]
-
-        the_type = type(value)
-
-        # Handle plain values.
-        if the_type is bool:
-            return "TO_BOOLEAN(?)", "true" if value else "false"
-        if the_type in (int, float):
-            return "TO_DOUBLE(?)", value
-        if the_type is str:
-            return "TO_NVARCHAR(?)", value
-
-        # Handle container types: only allowed for dates.
-        if is_date_value(value):
-            return "TO_DATE(?)", value["date"]
-        
-        # If we reach this point, the value type is not supported.
-        raise ValueError(f"Unsupported filter value type: {the_type}, value: {value}")
 
     @staticmethod
     def _sql_serialize_logical_clauses(
