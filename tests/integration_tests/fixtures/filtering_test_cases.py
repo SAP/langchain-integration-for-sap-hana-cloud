@@ -358,3 +358,115 @@ FILTERING_TEST_CASES = [
     *TYPE_4B_FILTERING_TEST_CASES,
     *TYPE_5_FILTERING_TEST_CASES,
 ]
+
+ERROR_FILTERING_TEST_CASES = [
+    # These involve invalid filter formats that should raise errors
+    # unknown logical operator
+    (
+        {"$xor": [{"id": 1}, {"id": 2}]},
+        "Unsupported logical operation for operator='$xor', operands=[{'id': 1}, {'id': 2}]",
+    ),
+    # unknown column operator
+    (
+        {"id": {"$unknown": 1}},
+        "Unsupported column operation for operator='$unknown', operands=1",
+    ),
+    # more than one operator at the same level
+    (
+      {"name": {"$eq": "adam", "$ne": "bob"}},
+      "Expecting a single entry 'operator: operands'"
+      f", but got value={{'$eq': 'adam', '$ne': 'bob'}}"
+    ),
+    # plain value is not supported
+    (
+        {"name": ["abcd"]},
+        "Invalid filter value with key='name', value=['abcd']"
+    ),
+    # # logical operators
+    (
+        {"$or": [{"id": 1}]},
+        "Expected a list of atleast two operands for operator='$or', but got operands=[{'id': 1}]"
+    ),
+    (
+        {"$and": "adam"},
+        "Expected a list of atleast two operands for operator='$and', but got operands='adam'"
+    ),
+    # # contains operator
+    (
+        {"tags": {"$contains": ""}},
+        "Expected a non-empty string operand for operator='$contains', but got operands=''"
+    ),
+    (
+        {"tags": {"$contains": 5}},
+        "Expected a non-empty string operand for operator='$contains', but got operands=5"
+    ),
+    # # like operator
+    (
+        {"name": {"$like": False}},
+        "Expected a string operand for operator='$like', but got operands=False"
+    ),
+    # between operator
+    (
+        {"id": {"$between": [1]}},
+        "Expected a list of two operands for operator='$between', but got operands=[1]"
+    ),
+    (
+        {"id": {"$between": [1, "2"]}},
+        "Expected operands of the same type for operator='$between', but got operands=[1, '2']"
+    ),
+    (
+        {"id": {"$between": [False, True]}},
+        "Expected a list of (int, float, str, date) for operator='$between', but got operands=[False, True]"
+    ),
+    # in operators
+    (
+        {"name": {"$in": []}},
+        "Expected a non-empty list of operands for operator='$in', but got operands=[]"
+    ),
+    (
+        {"name": {"$in": ["adam", 1]}},
+        "Expected operands of the same type for operator='$in', but got operands=['adam', 1]"
+    ),
+    (
+        {"name": {"$in": {"unexpected": "dict"}}},
+        "Expected a non-empty list of operands for operator='$in', but got operands={'unexpected': 'dict'}"
+    ),
+    (
+        {"name": {"$nin": []}},
+        "Expected a non-empty list of operands for operator='$nin', but got operands=[]"
+    ),
+    (
+        {"name": {"$nin": ["adam", 1]}},
+        "Expected operands of the same type for operator='$nin', but got operands=['adam', 1]"
+    ),
+    (
+        {"name": {"$nin": {"unexpected": "dict"}}},
+        "Expected a non-empty list of operands for operator='$nin', but got operands={'unexpected': 'dict'}" 
+    ),
+    # eq and ne operators
+    (
+        {"name": {"$eq": ["unexpected", "list"]}},
+        "Expected a (int, float, str, bool, date, None) for operator='$eq', but got operands=['unexpected', 'list']"
+    ),
+    (
+        {"name": {"$ne": {"unexpected": "dict"}}},
+        "Expected a (int, float, str, bool, date, None) for operator='$ne', but got operands={'unexpected': 'dict'}" 
+    ),
+    # gt, gte, lt, lte operators
+    (
+        {"name": {"$gt": ["unexpected", "list"]}},
+        "Expected a (int, float, str, date) for operator='$gt', but got operands=['unexpected', 'list']"
+    ),
+    (
+        {"name": {"$gte": False}},
+        "Expected a (int, float, str, date) for operator='$gte', but got operands=False"
+    ),
+    (
+        {"name": {"$lt": ["unexpected", "list"]}},
+        "Expected a (int, float, str, date) for operator='$lt', but got operands=['unexpected', 'list']"
+    ),
+    (
+        {"name": {"$lte": True}},
+        "Expected a (int, float, str, date) for operator='$lte', but got operands=True" 
+    ),
+]
