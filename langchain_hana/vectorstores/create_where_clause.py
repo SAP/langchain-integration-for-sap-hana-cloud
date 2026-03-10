@@ -15,9 +15,11 @@ class FilterOperand:
             if "date" not in value:
                 raise ValueError(f"Date operand missing 'date' key: {value!r}")
             self.value = value["date"]
+            if not self.value:
+                raise ValueError("Date operand with empty value")
             self.the_type = "date"
         else:
-            raise ValueError(f"Cannot deduce filter operand from {value!r}")
+            raise ValueError(f"Operand cannot be created from {value!r}")
     
     def __str__(self) -> str:
         return f"{self.value!r} ({self.the_type})"
@@ -74,10 +76,9 @@ def _determine_single_filter_operand(operator: str, operands: any) -> FilterOper
         )
     try:
         return FilterOperand(operands)
-    except ValueError:
-        raise ValueError(
-            f"Operator {operator} received unsupported operand: {operands!r}"
-        )
+    except ValueError as e:
+        error_message = str(e)
+        raise ValueError(f"Operator {operator}: {error_message}")
 
 
 def _determine_sql_operands(operator: str, operands: any) -> list[SqlOperand]:

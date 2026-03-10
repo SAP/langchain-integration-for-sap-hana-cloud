@@ -350,6 +350,79 @@ TYPE_5_FILTERING_TEST_CASES = [
     ),
 ]
 
+TYPE_6_DATE_FILTERING_TEST_CASES = [
+    # These involve date filtering with TO_DATE
+    # Implicit $eq with date
+    (
+        {"date": {"type": "date", "date": "2021-01-01"}},
+        [1, 3],  # adam and jane have date 2021-01-01
+        "WHERE JSON_VALUE(VEC_META, '$.date') = TO_DATE(?)",
+        ["2021-01-01"],
+    ),
+    # Explicit $eq with date
+    (
+        {"date": {"$eq": {"type": "date", "date": "2021-01-02"}}},
+        [2],  # bob has date 2021-01-02
+        "WHERE JSON_VALUE(VEC_META, '$.date') = TO_DATE(?)",
+        ["2021-01-02"],
+    ),
+    # $ne with date
+    (
+        {"date": {"$ne": {"type": "date", "date": "2021-01-01"}}},
+        [2],  # bob is the only one with a different date
+        "WHERE JSON_VALUE(VEC_META, '$.date') <> TO_DATE(?)",
+        ["2021-01-01"],
+    ),
+    # $gt with date
+    (
+        {"date": {"$gt": {"type": "date", "date": "2021-01-01"}}},
+        [2],  # bob has date 2021-01-02
+        "WHERE JSON_VALUE(VEC_META, '$.date') > TO_DATE(?)",
+        ["2021-01-01"],
+    ),
+    # $gte with date
+    (
+        {"date": {"$gte": {"type": "date", "date": "2021-01-01"}}},
+        [1, 2, 3],  # all documents
+        "WHERE JSON_VALUE(VEC_META, '$.date') >= TO_DATE(?)",
+        ["2021-01-01"],
+    ),
+    # $lt with date
+    (
+        {"date": {"$lt": {"type": "date", "date": "2021-01-02"}}},
+        [1, 3],  # adam and jane
+        "WHERE JSON_VALUE(VEC_META, '$.date') < TO_DATE(?)",
+        ["2021-01-02"],
+    ),
+    # $lte with date
+    (
+        {"date": {"$lte": {"type": "date", "date": "2021-01-01"}}},
+        [1, 3],  # adam and jane
+        "WHERE JSON_VALUE(VEC_META, '$.date') <= TO_DATE(?)",
+        ["2021-01-01"],
+    ),
+    # $between with dates
+    (
+        {"date": {"$between": [
+            {"type": "date", "date": "2021-01-01"},
+            {"type": "date", "date": "2021-01-02"}
+        ]}},
+        [1, 2, 3],  # all documents
+        "WHERE JSON_VALUE(VEC_META, '$.date') BETWEEN TO_DATE(?) AND TO_DATE(?)",
+        ["2021-01-01", "2021-01-02"],
+    ),
+    # $in with dates
+    (
+        {"date": {"$in": [
+            {"type": "date", "date": "2021-01-01"},
+            {"type": "date", "date": "2021-01-03"}  # date that doesn't exist
+        ]}},
+        [1, 3],  # adam and jane
+        "WHERE JSON_VALUE(VEC_META, '$.date') IN (TO_DATE(?), TO_DATE(?))",
+        ["2021-01-01", "2021-01-03"],
+    ),
+]
+
 FILTERING_TEST_CASES = [
     *TYPE_1_FILTERING_TEST_CASES,
     *TYPE_2_FILTERING_TEST_CASES,
@@ -357,6 +430,7 @@ FILTERING_TEST_CASES = [
     *TYPE_4_FILTERING_TEST_CASES,
     *TYPE_4B_FILTERING_TEST_CASES,
     *TYPE_5_FILTERING_TEST_CASES,
+    *TYPE_6_DATE_FILTERING_TEST_CASES,
 ]
 
 ERROR_FILTERING_TEST_CASES = [
@@ -453,7 +527,7 @@ ERROR_FILTERING_TEST_CASES = [
     ),
     (
         {"name": {"$ne": {"unexpected": "dict"}}},
-        "Operator $ne received unsupported operand: {'unexpected': 'dict'}"
+        "Operator $ne: Operand cannot be created from {'unexpected': 'dict'}"
     ),
     # gt, gte, lt, lte operators
     (
@@ -471,5 +545,14 @@ ERROR_FILTERING_TEST_CASES = [
     (
         {"name": {"$lte": True}},
         "Operator $lte expects operand of type int/float/str/date, but got True (bool)"
+    ),
+    # date operand errors
+    (
+        {"date": {"$eq": {"type": "date"}}},  # missing 'date' key
+        "Operator $eq: Date operand missing 'date' key: {'type': 'date'}"
+    ),
+    (
+        {"date": {"$gt": {"type": "date", "date": ""}}},  # empty date string
+        "Operator $gt: Date operand with empty value"
     ),
 ]
