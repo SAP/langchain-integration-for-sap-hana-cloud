@@ -364,113 +364,112 @@ ERROR_FILTERING_TEST_CASES = [
     # unknown logical operator
     (
         {"$xor": [{"id": 1}, {"id": 2}]},
-        "Unsupported logical operation for operator='$xor', operands=[{'id': 1}, {'id': 2}]",
+        "Operator $xor is not supported",
     ),
     # unknown column operator
     (
         {"id": {"$unknown": 1}},
-        "Unsupported column operation for operator='$unknown', operands=1",
+        "Operator $unknown is not supported",
     ),
     # more than one operator at the same level
     (
       {"name": {"$eq": "adam", "$ne": "bob"}},
-      "Expecting a single entry 'operator: operands'"
-      f", but got value={{'$eq': 'adam', '$ne': 'bob'}}"
+      "Filter expects a single 'operator: operands' entry, but got {'$eq': 'adam', '$ne': 'bob'}"
     ),
-    # plain value is not supported
+    # plain value is not supported (implicit $eq)
     (
         {"name": ["abcd"]},
-        "Cannot deduce SQL operand for ['abcd']"
+        "Implicit operator $eq received unsupported operand: ['abcd']"
     ),
     # # logical operators
     (
         {"$or": [{"id": 1}]},
-        "Expected a list of at least 2 operands for operator='$or', but got 1"
+        "Operator $or expects at least 2 operands, but got [{'id': 1}]"
     ),
     (
         {"$and": "adam"},
-        "Expected a list of operands for operator='$and', but got adam"
+        "Operator $and expects a list of operands, but got 'adam'"
     ),
     # # contains operator
     (
         {"tags": {"$contains": ""}},
-        "Expected a non-empty string operand for $contains"
+        "Operator $contains expects a non-empy string operand, but got '' (str)"
     ),
     (
         {"tags": {"$contains": 5}},
-        "Expected a string operand for $contains, but got 5"
+        "Operator $contains expects a non-empy string operand, but got 5 (int)"
     ),
     # # like operator
     (
         {"name": {"$like": False}},
-        "Expected a string operand for $like, but got False"
+        "Operator $like expects a string operand, but got False (bool)"
     ),
     # between operator
     (
         {"id": {"$between": [1]}},
-        "Expected 2 operands for $between, but got 1"
+        "Operator $between expects 2 operands, but got [1 (int)]"
     ),
     (
         {"id": {"$between": [1, "2"]}},
-        "Expected operands of the same type for $between, but got [1, '2']"
+        "Operator $between expects operands of the same type, but got [1 (int), '2' (str)]"
     ),
     (
         {"id": {"$between": [1, 2.0]}},
-        "Expected operands of the same type for $between, but got [1, 2.0]"
+        "Operator $between expects operands of the same type, but got [1 (int), 2.0 (float)]"
     ),
     (
         {"id": {"$between": [False, True]}},
-        "Expected operand types (int, float, str, date) for $between, but got False"
+        "Operator $between expects operand types (int, float, str, date), but got [False (bool), True (bool)]"
     ),
     # in operators
     (
         {"name": {"$in": []}},
-        "Expected a non-empty list of operands for $in"
+        "Operator $in expects at least 1 operand"
     ),
     (
         {"name": {"$in": ["adam", 1]}},
-        "Expected operands of the same type for $in, but got ['adam', 1]"
+        "Operator $in expects operands of the same type, but got ['adam', 1]"
     ),
     (
         {"name": {"$in": {"unexpected": "dict"}}},
-        "Expected list of operands, but got {'unexpected': 'dict'}"
+        "Operator $in expects list/tuple of operands, but got {'unexpected': 'dict'}"
     ),
     (
         {"name": {"$nin": []}},
-        "Expected a non-empty list of operands for $nin"
+        "Operator $nin expects at least 1 operand"
     ),
     (
         {"name": {"$nin": ["adam", 1]}},
-        "Expected operands of the same type for $nin, but got ['adam', 1]"
+        "Operator $nin expects operands of the same type, but got ['adam', 1]"
     ),
     (
         {"name": {"$nin": {"unexpected": "dict"}}},
-        "Expected list of operands, but got {'unexpected': 'dict'}"
+        "Operator $nin expects list/tuple of operands, but got {'unexpected': 'dict'}"
     ),
     # eq and ne operators
     (
         {"name": {"$eq": ["unexpected", "list"]}},
-        "Cannot deduce SQL operand for ['unexpected', 'list']"
+        "Operator $eq expects a single operand, but got list: ['unexpected', 'list']"
     ),
     (
         {"name": {"$ne": {"unexpected": "dict"}}},
-        "Cannot deduce SQL operand for {'unexpected': 'dict'}" 
+        "Operator $ne received unsupported operand: {'unexpected': 'dict'}"
     ),
     # gt, gte, lt, lte operators
     (
         {"name": {"$gt": ["unexpected", "list"]}},
-        "Cannot deduce SQL operand for ['unexpected', 'list']"
+        "Operator $gt expects a single operand, but got list: ['unexpected', 'list']"
     ),
     (
         {"name": {"$gte": False}},
-        "Expected operand types (int, float, str, date) for $gte, but got False"
+        "Operator $gte expects operand of type int/float/str/date, but got False (bool)"
     ),
     (
         {"name": {"$lt": ["unexpected", "list"]}},
-        "Cannot deduce SQL operand for ['unexpected', 'list']"
+        "Operator $lt expects a single operand, but got list: ['unexpected', 'list']"
     ),
     (
         {"name": {"$lte": True}},
-        "Expected operand types (int, float, str, date) for $lte, but got True" 
+        "Operator $lte expects operand of type int/float/str/date, but got True (bool)"
     ),
 ]
