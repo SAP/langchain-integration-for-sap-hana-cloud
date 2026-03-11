@@ -130,34 +130,34 @@ class HanaReranker(BaseDocumentCompressor):
             except Exception as e:
                 raise RuntimeError(f"Error creating temporary table for reranking: {e}")
             
-            insert_sql = "INSERT INTO #RERANK_DOCS (ID, TEXT, METADATA) VALUES (?, ?, ?)"
             try:
-                cur.executemany(insert_sql, [(doc.id, doc.page_content, json.dumps(doc.metadata)) for doc in documents]) 
-            except Exception as e:
-                cur.execute("DROP TABLE #RERANK_DOCS")  # Ensure temp table is dropped if error occurs
-                raise RuntimeError(f"Error inserting documents into temporary table for reranking: {e}")
+                insert_sql = "INSERT INTO #RERANK_DOCS (ID, TEXT, METADATA) VALUES (?, ?, ?)"
+                try:
+                    cur.executemany(insert_sql, [(doc.id, doc.page_content, json.dumps(doc.metadata)) for doc in documents]) 
+                except Exception as e:
+                    raise RuntimeError(f"Error inserting documents into temporary table for reranking: {e}")
             
-            reranking_sql = f"""
-            SELECT
-                TOP {top_n}
-                ROW_NUMBER() OVER () - 1 AS INDEX,
-                ID,
-                TEXT,
-                METADATA,
-                CROSS_ENCODE(TO_NVARCHAR(TEXT), ?, ?) OVER() AS SCORE
-            FROM #RERANK_DOCS
-            ORDER BY SCORE DESC
-            """
-            try:
-                cur.execute(reranking_sql, [query, self.model])
-                rows = cur.fetchall()
-                for row in rows:
-                    idx, doc_id, text, metadata_json, score = row
-                    metadata = json.loads(metadata_json)
-                    document = Document(id=doc_id, page_content=text, metadata=metadata)
-                    document_idx_with_scores.append((idx, document, score))
-            except Exception as e:
-                raise RuntimeError(f"Error executing reranking query: {e}")
+                reranking_sql = f"""
+                SELECT
+                    TOP {top_n}
+                    ROW_NUMBER() OVER () - 1 AS INDEX,
+                    ID,
+                    TEXT,
+                    METADATA,
+                    CROSS_ENCODE(TO_NVARCHAR(TEXT), ?, ?) OVER() AS SCORE
+                FROM #RERANK_DOCS
+                ORDER BY SCORE DESC
+                """
+                try:
+                    cur.execute(reranking_sql, [query, self.model])
+                    rows = cur.fetchall()
+                    for row in rows:
+                        idx, doc_id, text, metadata_json, score = row
+                        metadata = json.loads(metadata_json)
+                        document = Document(id=doc_id, page_content=text, metadata=metadata)
+                        document_idx_with_scores.append((idx, document, score))
+                except Exception as e:
+                    raise RuntimeError(f"Error executing reranking query: {e}")
             finally:
                 cur.execute("DROP TABLE #RERANK_DOCS")  # Ensure temp table is dropped
         
