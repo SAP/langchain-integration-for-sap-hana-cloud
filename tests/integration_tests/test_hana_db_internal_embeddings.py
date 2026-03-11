@@ -59,6 +59,24 @@ def vectoroutputtype_param(request):  # type: ignore[no-untyped-def]
     """Parametrize vectoroutputtype values for testing."""
     return request.param
 
+
+@pytest.fixture(params=[None, {
+    "query": HanaTestConstants.TEXTS[0],
+    "model_id": os.environ["HANA_DB_RERANK_MODEL_ID"],
+}], ids=["no_rerank", "with_rerank"])
+def rerank_config_param(request):  # type: ignore[no-untyped-def]
+    """Parametrize rerank_config values for testing."""
+    return request.param
+
+
+def build_rerank_config(base_config, k):  # type: ignore[no-untyped-def]
+    """Build rerank_config with top_n set to k."""
+    if base_config is None:
+        return None
+    result = base_config.copy()
+    result["top_n"] = k
+    return result
+
 @pytest.fixture(scope="module", params=[{
     "internal_embedding_model_id": os.environ["HANA_DB_EMBEDDING_MODEL_ID"],
 }, {
@@ -139,14 +157,15 @@ def test_hanavector_add_texts(vectorDB) -> None:
 
 
 def test_hanavector_similarity_search_with_metadata_filter(
-    vectorDB,
+    vectorDB, rerank_config_param
 ) -> None:
     vectorDB.add_texts(
         texts=HanaTestConstants.TEXTS, metadatas=HanaTestConstants.METADATAS
     )
+    rerank_config = build_rerank_config(rerank_config_param, k=3)
 
     search_result = vectorDB.similarity_search(
-        HanaTestConstants.TEXTS[0], 3, filter={"start": 100}
+        HanaTestConstants.TEXTS[0], 3, filter={"start": 100}, rerank_config=rerank_config
     )
 
     assert len(search_result) == 1
@@ -155,12 +174,12 @@ def test_hanavector_similarity_search_with_metadata_filter(
     assert HanaTestConstants.METADATAS[1]["end"] == search_result[0].metadata["end"]
 
     search_result = vectorDB.similarity_search(
-        HanaTestConstants.TEXTS[0], 3, filter={"start": 100, "end": 150}
+        HanaTestConstants.TEXTS[0], 3, filter={"start": 100, "end": 150}, rerank_config=rerank_config
     )
     assert len(search_result) == 0
 
     search_result = vectorDB.similarity_search(
-        HanaTestConstants.TEXTS[0], 3, filter={"start": 100, "end": 200}
+        HanaTestConstants.TEXTS[0], 3, filter={"start": 100, "end": 200}, rerank_config=rerank_config
     )
     assert len(search_result) == 1
     assert HanaTestConstants.TEXTS[1] == search_result[0].page_content
@@ -168,16 +187,17 @@ def test_hanavector_similarity_search_with_metadata_filter(
     assert HanaTestConstants.METADATAS[1]["end"] == search_result[0].metadata["end"]
 
 
-def test_hanavector_similarity_search_simple(vectorDB) -> None:
+def test_hanavector_similarity_search_simple(vectorDB, rerank_config_param) -> None:
     vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
+    rerank_config = build_rerank_config(rerank_config_param, k=1)
 
     assert (
         HanaTestConstants.TEXTS[0]
-        == vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 1)[0].page_content
+        == vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 1, rerank_config=rerank_config)[0].page_content
     )
     assert (
         HanaTestConstants.TEXTS[1]
-        != vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 1)[0].page_content
+        != vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 1, rerank_config=rerank_config)[0].page_content
     )
 
 
