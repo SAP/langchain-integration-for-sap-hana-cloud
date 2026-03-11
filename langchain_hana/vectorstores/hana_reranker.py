@@ -1,6 +1,7 @@
 # from __future__ import annotations
 
 # import logging
+import json
 from copy import deepcopy
 from typing import Any, Dict, List, Optional, Sequence, Union
 
@@ -111,19 +112,56 @@ class HanaReranker(BaseDocumentCompressor):
             A list of tuples containing the index, document, and score, ordered by relevance.
         """
 
+        if top_n <= 0 or top_n > len(documents):
+            raise ValueError("top_n must be greater than 0 and less than or equal to the number of documents")
+
         document_idx_with_scores = []
 
-        for idx, document in enumerate(documents):
-            with self.connection.cursor() as cur:
-                try:
-                    cur.execute("SELECT CROSS_ENCODE(?, ?, ?) OVER() AS SCORE FROM SYS.DUMMY", [document.page_content, query, self.model])
-                    score = cur.fetchone()[0]
+        with self.connection.cursor() as cur:
+            create_temp_table_sql = """
+            CREATE LOCAL TEMPORARY TABLE #RERANK_DOCS (
+                ID INT,
+                TEXT NCLOB,
+                METADATA NCLOB
+            );
+            """
+            try:
+                cur.execute(create_temp_table_sql)
+            except Exception as e:
+                raise RuntimeError(f"Error creating temporary table for reranking: {e}")
+            
+            insert_sql = "INSERT INTO #RERANK_DOCS (ID, TEXT, METADATA) VALUES (?, ?, ?)"
+            try:
+                cur.executemany(insert_sql, [(doc.id, doc.page_content, json.dumps(doc.metadata)) for doc in documents]) 
+            except Exception as e:
+                cur.execute("DROP TABLE #RERANK_DOCS")  # Ensure temp table is dropped if error occurs
+                raise RuntimeError(f"Error inserting documents into temporary table for reranking: {e}")
+            
+            reranking_sql = f"""
+            SELECT
+                TOP {top_n}
+                ROW_NUMBER() OVER () - 1 AS INDEX,
+                ID,
+                TEXT,
+                METADATA,
+                CROSS_ENCODE(TO_NVARCHAR(TEXT), ?, ?) OVER() AS SCORE
+            FROM #RERANK_DOCS
+            ORDER BY SCORE DESC
+            """
+            try:
+                cur.execute(reranking_sql, [query, self.model])
+                rows = cur.fetchall()
+                for row in rows:
+                    idx, doc_id, text, metadata_json, score = row
+                    metadata = json.loads(metadata_json)
+                    document = Document(id=doc_id, page_content=text, metadata=metadata)
                     document_idx_with_scores.append((idx, document, score))
-                except Exception as e:
-                    raise RuntimeError(f"Error during reranking document at index {idx}: {e}")
+            except Exception as e:
+                raise RuntimeError(f"Error executing reranking query: {e}")
+            finally:
+                cur.execute("DROP TABLE #RERANK_DOCS")  # Ensure temp table is dropped
         
-        sorted_docs = sorted(document_idx_with_scores, key=lambda x: x[2], reverse=True)
-        return sorted_docs[:top_n]
+        return document_idx_with_scores
 
     # def rerank(
     #     self,
@@ -257,7 +295,7 @@ class HanaReranker(BaseDocumentCompressor):
         reranked_results = self.rerank(documents=documents, query=query, top_n = 5)
 
         for idx, doc, score in reranked_results:
-            doc_copy = Document(doc.page_content, metadata=deepcopy(doc.metadata))
+            doc_copy = Document(doc.page_content, metadata=deepcopy(doc.metadata), id=doc.id)
             doc_copy.metadata["relevance_score"] = score
             compressed.append(doc_copy)
 
