@@ -126,9 +126,10 @@ def table_name_with_cleanup():
     HanaTestUtils.drop_table(config.conn, HanaTestConstants.TABLE_NAME_CUSTOM_DB)
 
 
-def test_hanavector_add_texts(vectorDB) -> None:
+@pytest.mark.parametrize("use_map_merge", [False, True])
+def test_hanavector_add_texts(vectorDB, use_map_merge: bool) -> None:
     vectorDB.add_texts(
-        texts=HanaTestConstants.TEXTS, metadatas=HanaTestConstants.METADATAS
+        texts=HanaTestConstants.TEXTS, metadatas=HanaTestConstants.METADATAS, use_map_merge=use_map_merge
     )
 
     # check that embeddings have been created in the table
@@ -143,55 +144,15 @@ def test_hanavector_add_texts(vectorDB) -> None:
     assert number_of_rows == number_of_texts
 
 
-def test_hanavector_add_texts_with_map_merge(vectorDB) -> None:
-    vectorDB.add_texts(
-        texts=HanaTestConstants.TEXTS, metadatas=HanaTestConstants.METADATAS, use_map_merge=True
-    )
-
-    # check that embeddings have been created in the table
-    number_of_texts = len(HanaTestConstants.TEXTS)
-    number_of_rows = -1
-    sql_str = f"SELECT COUNT(*) FROM {HanaTestConstants.TABLE_NAME}"
-    cur = config.conn.cursor()
-    cur.execute(sql_str)
-    if cur.has_result_set():
-        rows = cur.fetchall()
-        number_of_rows = rows[0][0]
-    assert number_of_rows == number_of_texts
-
-
-def test_hanavector_from_texts(table_name_with_cleanup) -> None:
-    table_name = table_name_with_cleanup
-    vectorDB = HanaDB.from_texts(
-        connection=config.conn,
-        texts=HanaTestConstants.TEXTS,
-        embedding=config.embedding,
-        table_name=table_name
-    )
-
-    # test if vectorDB is instance of HanaDB
-    assert isinstance(vectorDB, HanaDB)
-
-    # check that embeddings have been created in the table
-    number_of_texts = len(HanaTestConstants.TEXTS)
-    number_of_rows = -1
-    sql_str = f"SELECT COUNT(*) FROM {table_name}"
-    cur = config.conn.cursor()
-    cur.execute(sql_str)
-    if cur.has_result_set():
-        rows = cur.fetchall()
-        number_of_rows = rows[0][0]
-    assert number_of_rows == number_of_texts
-
-
-def test_hanavector_from_texts_with_map_merge(table_name_with_cleanup) -> None:
+@pytest.mark.parametrize("use_map_merge", [False, True])
+def test_hanavector_from_texts(table_name_with_cleanup, use_map_merge: bool) -> None:
     table_name = table_name_with_cleanup
     vectorDB = HanaDB.from_texts(
         connection=config.conn,
         texts=HanaTestConstants.TEXTS,
         embedding=config.embedding,
         table_name=table_name,
-        use_map_merge=True
+        use_map_merge=use_map_merge
     )
 
     # test if vectorDB is instance of HanaDB
@@ -206,7 +167,7 @@ def test_hanavector_from_texts_with_map_merge(table_name_with_cleanup) -> None:
     if cur.has_result_set():
         rows = cur.fetchall()
         number_of_rows = rows[0][0]
-    assert number_of_rows == number_of_texts      
+    assert number_of_rows == number_of_texts    
 
 
 def test_hanavector_similarity_search_with_metadata_filter(

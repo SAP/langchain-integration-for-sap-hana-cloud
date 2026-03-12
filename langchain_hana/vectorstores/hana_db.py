@@ -539,6 +539,7 @@ class HanaDB(VectorStore):
         texts: Iterable[str],
         metadatas: Optional[list[dict]] = None,
         embeddings: Optional[list[list[float]]] = None,
+        *,
         use_map_merge: bool = False,
         **kwargs: Any,
     ) -> list[str]:
@@ -550,6 +551,8 @@ class HanaDB(VectorStore):
                 Defaults to None.
             embeddings (Optional[list[list[float]]], optional): Optional pre-generated
                 embeddings. Defaults to None.
+            use_map_merge (bool, optional): Whether to use map merge for insertion
+                when using internal embeddings. Defaults to False.
 
         Returns:
             list[str]: empty list
@@ -679,9 +682,10 @@ class HanaDB(VectorStore):
         cur = self.connection.cursor()
 
         temp_table_name = f"#{self.table_name}_TEMP"
+        # TEMP TABLES ARE ROW BASED BY DEFAULT
         create_temp_table_sql = f'''
-        CREATE LOCAL TEMPORARY TABLE {temp_table_name} (
-            ID INT PRIMARY KEY,
+        CREATE LOCAL TEMPORARY COLUMN TABLE {temp_table_name} (
+            ID INT,
             "VEC_TEXT" NCLOB,
             "VEC_VECTOR" {self.vector_column_type}
         )
@@ -711,9 +715,10 @@ class HanaDB(VectorStore):
                 vector_embedding_sql
             )
             
-            uid = str(uuid.uuid4())
+            uid = str(uuid.uuid4()).replace("-", "_")
+            temp_func_name = f"F_VECTOR_EMBEDDING_{uid}"
             create_map_merge_function_sql = f"""
-            CREATE OR REPLACE FUNCTION F_VECTOR_EMBEDDING_{uid}(
+            CREATE OR REPLACE FUNCTION {temp_func_name}(
                     IN i_id INT,
                     IN i_text NCLOB
                 )
@@ -736,9 +741,9 @@ class HanaDB(VectorStore):
                 call_map_merge_sql = f"""
                     DO()
                     BEGIN
-                        dat = SELECT "ID", "VEC_TEXT", "VEC_VECTOR" FROM "{temp_table_name}";
-                        o_res = MAP_MERGE(:dat, "F_VECTOR_EMBEDDING_{uid}"(:dat."ID", :dat."VEC_TEXT"));
-                        MERGE INTO "{temp_table_name}" AS dat
+                        dat = SELECT "ID", "VEC_TEXT", "VEC_VECTOR" FROM {temp_table_name};
+                        o_res = MAP_MERGE(:dat, {temp_func_name}(:dat."ID", :dat."VEC_TEXT"));
+                        MERGE INTO {temp_table_name} AS dat
                         USING :o_res AS upd
                         ON dat."ID" = upd."ID"
                         WHEN MATCHED THEN
@@ -752,7 +757,7 @@ class HanaDB(VectorStore):
                     raise Exception(f"Error while calling map merge function: {e}")
 
                 fetch_embeddings_sql = f"""
-                SELECT VEC_VECTOR FROM "{temp_table_name}"
+                SELECT VEC_VECTOR FROM {temp_table_name}
                 """
                 try:
                     cur.execute(fetch_embeddings_sql)
@@ -762,7 +767,7 @@ class HanaDB(VectorStore):
                     raise Exception(f"Error while fetching embeddings: {e}")     
             finally:
                 try:
-                    cur.execute(f"DROP FUNCTION F_VECTOR_EMBEDDING_{uid}")
+                    cur.execute(f"DROP FUNCTION {temp_func_name}")
                 except Exception as e:
                     raise Exception(f"Error while dropping map merge function: {e}")
         finally:
@@ -830,8 +835,8 @@ class HanaDB(VectorStore):
         vector_column: str = default_vector_column,
         vector_column_length: int = default_vector_column_length,
         vector_column_type: str = default_vector_column_type,
-        use_map_merge: bool = False,
         *,
+        use_map_merge: bool = False,
         specific_metadata_columns: Optional[list[str]] = None,
     ):
         """Create a HanaDB instance from raw documents.
