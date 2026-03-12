@@ -678,8 +678,9 @@ class HanaDB(VectorStore):
 
         cur = self.connection.cursor()
 
+        temp_table_name = f"#{self.table_name}_TEMP"
         create_temp_table_sql = f'''
-        CREATE TEMPORARY TABLE #{self.table_name}_TEMP (
+        CREATE LOCAL TEMPORARY TABLE {temp_table_name} (
             ID INT PRIMARY KEY,
             "VEC_TEXT" NCLOB,
             "VEC_VECTOR" {self.vector_column_type}
@@ -693,7 +694,7 @@ class HanaDB(VectorStore):
                 raise Exception(f"Error while creating temporary table for map merge :{e}")
             
             insert_temp_table_sql = f'''
-            INSERT INTO #{self.table_name}_TEMP (ID, "VEC_TEXT", "VEC_VECTOR")
+            INSERT INTO {temp_table_name} (ID, "VEC_TEXT", "VEC_VECTOR")
             VALUES (?,?,NULL)
             '''
 
@@ -735,9 +736,9 @@ class HanaDB(VectorStore):
                 call_map_merge_sql = f"""
                     DO()
                     BEGIN
-                        dat = SELECT "ID", "VEC_TEXT", "VEC_VECTOR" FROM "{self.table_name}_TEMP";
-                        o_res = MAP_MERGE(:dat, "F_VECTOR_EMBEDDING"(:dat."ID", :dat."VEC_TEXT"));
-                        MERGE INTO "{self.table_name}_TEMP" AS dat
+                        dat = SELECT "ID", "VEC_TEXT", "VEC_VECTOR" FROM "{temp_table_name}";
+                        o_res = MAP_MERGE(:dat, "F_VECTOR_EMBEDDING_{uid}"(:dat."ID", :dat."VEC_TEXT"));
+                        MERGE INTO "{temp_table_name}" AS dat
                         USING :o_res AS upd
                         ON dat."ID" = upd."ID"
                         WHEN MATCHED THEN
@@ -748,27 +749,27 @@ class HanaDB(VectorStore):
                 try:
                     cur.execute(call_map_merge_sql)
                 except Exception as e:
-                    raise Exception(f"Error while calling map merge function :{e}")
+                    raise Exception(f"Error while calling map merge function: {e}")
 
                 fetch_embeddings_sql = f"""
-                SELECT VEC_VECTOR FROM {self.table_name}_TEMP
+                SELECT VEC_VECTOR FROM "{temp_table_name}"
                 """
                 try:
                     cur.execute(fetch_embeddings_sql)
                     rows = cur.fetchall()
                     embeddings = [row[0] for row in rows]
                 except Exception as e:
-                    raise Exception(f"Error while fetching embeddings :{e}")     
+                    raise Exception(f"Error while fetching embeddings: {e}")     
             finally:
                 try:
                     cur.execute(f"DROP FUNCTION F_VECTOR_EMBEDDING_{uid}")
                 except Exception as e:
-                    raise Exception(f"Error while dropping map merge function :{e}")
+                    raise Exception(f"Error while dropping map merge function: {e}")
         finally:
             try:
-                cur.execute(f"DROP TABLE {self.table_name}_TEMP")
+                cur.execute(f"DROP TABLE {temp_table_name}")
             except Exception as e:
-                raise Exception(f"Error while dropping temp table/function :{e}")
+                raise Exception(f"Error while dropping temp table: {e}")
 
         sql_params = []
         for i, text in enumerate(texts):
