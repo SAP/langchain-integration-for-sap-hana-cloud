@@ -14,6 +14,7 @@ from typing import (
     Pattern,
     Type,
 )
+import uuid
 
 import numpy as np
 from hdbcli import dbapi  # type: ignore
@@ -678,7 +679,7 @@ class HanaDB(VectorStore):
         cur = self.connection.cursor()
 
         create_temp_table_sql = f'''
-        CREATE TABLE {self.table_name}_TEMP (
+        CREATE TEMPORARY TABLE #{self.table_name}_TEMP (
             ID INT PRIMARY KEY,
             "VEC_TEXT" NCLOB,
             "VEC_VECTOR" {self.vector_column_type}
@@ -686,84 +687,88 @@ class HanaDB(VectorStore):
         '''
 
         try:
-            cur.execute(create_temp_table_sql)
-        except Exception as e:
-            raise Exception(f"Error while creating table for map merge :{e}")
-        
-        insert_temp_table_sql = f'''
-        INSERT INTO {self.table_name}_TEMP (ID, "VEC_TEXT", "VEC_VECTOR")
-        VALUES (?,?,NULL)
-        '''
+            try:
+                cur.execute(create_temp_table_sql)
+            except Exception as e:
+                raise Exception(f"Error while creating temporary table for map merge :{e}")
+            
+            insert_temp_table_sql = f'''
+            INSERT INTO #{self.table_name}_TEMP (ID, "VEC_TEXT", "VEC_VECTOR")
+            VALUES (?,?,NULL)
+            '''
 
-        try:
-            cur.executemany(insert_temp_table_sql, [(i, text) for i,text in enumerate(texts)])
-        except Exception as e:
-            raise Exception(f"Error while inserting rows for map merge :{e}")
-        
-        if self.internal_embedding_remote_source:
-            vector_embedding_sql = f"""VECTOR_EMBEDDING(:i_text, 'DOCUMENT', '{self.internal_embedding_model_id}', "{self.internal_embedding_remote_source}")"""
-        else:
-            vector_embedding_sql = f"""VECTOR_EMBEDDING(:i_text, 'DOCUMENT', '{self.internal_embedding_model_id}')"""
-        vector_embedding_sql = self._convert_vector_embedding_to_column_type(
-            vector_embedding_sql
-        )
-        
-        create_map_merge_function_sql = f"""
-        CREATE OR REPLACE FUNCTION F_VECTOR_EMBEDDING(
-                IN i_id INT,
-                IN i_text NCLOB
+            try:
+                cur.executemany(insert_temp_table_sql, [(i, text) for i,text in enumerate(texts)])
+            except Exception as e:
+                raise Exception(f"Error while inserting rows into temporary table for map merge :{e}")
+            
+            if self.internal_embedding_remote_source:
+                vector_embedding_sql = f"""VECTOR_EMBEDDING(:i_text, 'DOCUMENT', '{self.internal_embedding_model_id}', "{self.internal_embedding_remote_source}")"""
+            else:
+                vector_embedding_sql = f"""VECTOR_EMBEDDING(:i_text, 'DOCUMENT', '{self.internal_embedding_model_id}')"""
+            vector_embedding_sql = self._convert_vector_embedding_to_column_type(
+                vector_embedding_sql
             )
-            RETURNS TABLE("ID" INT, "PAL_EMBEDDING" {self.vector_column_type})
-            LANGUAGE SQLSCRIPT READS SQL DATA AS
-            BEGIN
-                RETURN 
-                    SELECT :i_id AS "ID", 
-                        {vector_embedding_sql} AS "PAL_EMBEDDING"
-                    FROM DUMMY;
-            END;
-         """
-        
-        try:
-            cur.execute(create_map_merge_function_sql)
-        except Exception as e:
-            raise Exception(f"Error while creating map merge function :{e}")
-        
-        call_map_merge_sql = f"""
-            DO()
-            BEGIN
-                dat = SELECT "ID", "VEC_TEXT", "VEC_VECTOR" FROM "{self.table_name}_TEMP";
-                o_res = MAP_MERGE(:dat, "F_VECTOR_EMBEDDING"(:dat."ID", :dat."VEC_TEXT"));
-                MERGE INTO "{self.table_name}_TEMP" AS dat
-                USING :o_res AS upd
-                ON dat."ID" = upd."ID"
-                WHEN MATCHED THEN
-                    UPDATE SET dat."VEC_VECTOR" = upd."PAL_EMBEDDING";
-            END;
-        """
+            
+            uid = str(uuid.uuid4())
+            create_map_merge_function_sql = f"""
+            CREATE OR REPLACE FUNCTION F_VECTOR_EMBEDDING_{uid}(
+                    IN i_id INT,
+                    IN i_text NCLOB
+                )
+                RETURNS TABLE("ID" INT, "PAL_EMBEDDING" {self.vector_column_type})
+                LANGUAGE SQLSCRIPT READS SQL DATA AS
+                BEGIN
+                    RETURN 
+                        SELECT :i_id AS "ID", 
+                            {vector_embedding_sql} AS "PAL_EMBEDDING"
+                        FROM DUMMY;
+                END;
+            """
+            
+            try:
+                try:
+                    cur.execute(create_map_merge_function_sql)
+                except Exception as e:
+                    raise Exception(f"Error while creating map merge function :{e}")
+                
+                call_map_merge_sql = f"""
+                    DO()
+                    BEGIN
+                        dat = SELECT "ID", "VEC_TEXT", "VEC_VECTOR" FROM "{self.table_name}_TEMP";
+                        o_res = MAP_MERGE(:dat, "F_VECTOR_EMBEDDING"(:dat."ID", :dat."VEC_TEXT"));
+                        MERGE INTO "{self.table_name}_TEMP" AS dat
+                        USING :o_res AS upd
+                        ON dat."ID" = upd."ID"
+                        WHEN MATCHED THEN
+                            UPDATE SET dat."VEC_VECTOR" = upd."PAL_EMBEDDING";
+                    END;
+                """
 
-        try:
-            cur.execute(call_map_merge_sql)
-        except Exception as e:
-            raise Exception(f"Error while calling map merge function :{e}")
-        
+                try:
+                    cur.execute(call_map_merge_sql)
+                except Exception as e:
+                    raise Exception(f"Error while calling map merge function :{e}")
 
-        fetch_embeddings_sql = f"""
-        SELECT VEC_VECTOR FROM {self.table_name}_TEMP
-        """
-        try:
-            cur.execute(fetch_embeddings_sql)
-            rows = cur.fetchall()
-            embeddings = [row[0] for row in rows]
-        except Exception as e:
-            raise Exception(f"Error while fetching embeddings :{e}")
-        
-
-        try:
-            cur.execute(f"DROP FUNCTION F_VECTOR_EMBEDDING")
-            cur.execute(f"DROP TABLE {self.table_name}_TEMP")
-        except Exception as e:
-            raise Exception(f"Error while dropping temp table/function :{e}")
-
+                fetch_embeddings_sql = f"""
+                SELECT VEC_VECTOR FROM {self.table_name}_TEMP
+                """
+                try:
+                    cur.execute(fetch_embeddings_sql)
+                    rows = cur.fetchall()
+                    embeddings = [row[0] for row in rows]
+                except Exception as e:
+                    raise Exception(f"Error while fetching embeddings :{e}")     
+            finally:
+                try:
+                    cur.execute(f"DROP FUNCTION F_VECTOR_EMBEDDING_{uid}")
+                except Exception as e:
+                    raise Exception(f"Error while dropping map merge function :{e}")
+        finally:
+            try:
+                cur.execute(f"DROP TABLE {self.table_name}_TEMP")
+            except Exception as e:
+                raise Exception(f"Error while dropping temp table/function :{e}")
 
         sql_params = []
         for i, text in enumerate(texts):
