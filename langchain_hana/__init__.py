@@ -5,6 +5,7 @@ from langchain_hana.embeddings import HanaInternalEmbeddings
 from langchain_hana.graphs import HanaRdfGraph
 from langchain_hana.vectorstores import HanaDB
 from langchain_hana.structured_query import HanaTranslator
+from langchain_hana.agents import HanaSparqlQAAgent
 
 try:
     __version__ = metadata.version(__package__)
@@ -19,5 +20,6 @@ __all__ = [
     "HanaInternalEmbeddings",
     "HanaRdfGraph",
     "HanaSparqlQAChain",
+    "HanaSparqlQAAgent",
     "__version__",
 ]
