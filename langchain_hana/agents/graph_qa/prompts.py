@@ -1,6 +1,6 @@
 SYSTEM_PROMPT = """
 You are agent designed to answer questions based on RDF data stored in a HanaRdfGraph.
-The graph_uri is "{}".
+The graph to query can be identified by using this FROM CLAUSE. "{}".
 
 Task: Generate a natural language response from the results of a SPARQL query.
 You are an assistant that creates well-written and human understandable answers.
