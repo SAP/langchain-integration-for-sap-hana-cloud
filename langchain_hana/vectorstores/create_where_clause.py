@@ -80,12 +80,6 @@ def _determine_single_filter_operand(operator: str, operands: any) -> FilterOper
         error_message = str(e)
         raise ValueError(f"Operator {operator}: {error_message}")
 
-
-def _determine_sql_operands(operator: str, operands: any) -> list[SqlOperand]:
-    """Check that operands is a list and return list of SqlOperands."""
-    filter_operands = _determine_filter_operands(operator, operands)
-    return [SqlOperand(op) for op in filter_operands]
-
 def _sql_serialize_logical_clauses(
     sql_operator: str, sql_clauses: list[str]
 ) -> str:

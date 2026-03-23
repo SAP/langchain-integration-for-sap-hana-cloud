@@ -503,6 +503,10 @@ ERROR_FILTERING_TEST_CASES = [
         {"id": {"$between": [False, True]}},
         "Operator $between expects operand types (int, float, str, date), but got [False (bool), True (bool)]"
     ),
+    (
+        {"id": {"$between": [{"unexpected": "dict"}, 2]}},
+        "Operator $between: Operand cannot be created from {'unexpected': 'dict'}"
+    ),
     # in operators
     (
         {"name": {"$in": []}},
@@ -517,6 +521,10 @@ ERROR_FILTERING_TEST_CASES = [
         "Operator $in expects list/tuple of operands, but got {'unexpected': 'dict'}"
     ),
     (
+        {"name": {"$in": [{"unexpected": "dict"}]}},
+        "Operator $in: Operand cannot be created from {'unexpected': 'dict'}"
+    ),
+    (
         {"name": {"$nin": []}},
         "Operator $nin expects at least 1 operand"
     ),
@@ -527,6 +535,10 @@ ERROR_FILTERING_TEST_CASES = [
     (
         {"name": {"$nin": {"unexpected": "dict"}}},
         "Operator $nin expects list/tuple of operands, but got {'unexpected': 'dict'}"
+    ),
+    (
+        {"name": {"$nin": [{"unexpected": "dict"}]}},
+        "Operator $nin: Operand cannot be created from {'unexpected': 'dict'}"
     ),
     # eq and ne operators
     (
