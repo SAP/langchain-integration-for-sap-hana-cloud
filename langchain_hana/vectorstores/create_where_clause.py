@@ -3,27 +3,95 @@ from typing import List, Tuple, Any
 
 logger = logging.getLogger(__name__)
 
-def is_date_value(value: Any) -> bool:
-    return isinstance(value, dict) and ("type" in value) and (value["type"] == "date")
 
-def _determine_typed_sql_placeholder(value):  # type: ignore[no-untyped-def]
+class FilterOperand:
+    """Represents a filter operand with type information for validation and error messages."""
+    
+    def __init__(self, value):
+        if isinstance(value, (bool, int, float, str)):
+            self.value = value
+            self.the_type = type(value).__name__
+        elif isinstance(value, dict) and value.get("type") == "date":
+            if "date" not in value:
+                raise ValueError(f"Date operand missing 'date' key: {value!r}")
+            self.value = value["date"]
+            if not self.value:
+                raise ValueError("Date operand with empty value")
+            self.the_type = "date"
+        else:
+            raise ValueError(f"Operand cannot be created from {value!r}")
+    
+    def __str__(self) -> str:
+        return f"{self.value!r} ({self.the_type})"
+    
+    def __repr__(self) -> str:
+        return str(self)
 
-        the_type = type(value)
 
-        # Handle plain values.
-        if the_type is bool:
-            return "TO_BOOLEAN(?)", "true" if value else "false"
-        if the_type in (int, float):
-            return "TO_DOUBLE(?)", value
-        if the_type is str:
-            return "TO_NVARCHAR(?)", value
+class SqlOperand:
+    """SQL operand with placeholder and value for parameterized queries."""
+    
+    def __init__(self, operand: FilterOperand):
+        """Construct SqlOperand from a FilterOperand."""
+        if operand.the_type == "bool":
+            self.the_type = "BOOLEAN"
+            self.placeholder = "TO_BOOLEAN(?)"
+            self.value = "true" if operand.value else "false"
+        elif operand.the_type in ("int", "float"):
+            self.the_type = "DOUBLE"
+            self.placeholder = "TO_DOUBLE(?)"
+            self.value = float(operand.value)
+        elif operand.the_type == "str":
+            self.the_type = "NVARCHAR"
+            self.placeholder = "TO_NVARCHAR(?)"
+            self.value = operand.value
+        elif operand.the_type == "date":
+            self.the_type = "DATE"
+            self.placeholder = "TO_DATE(?)"
+            self.value = operand.value
+        else:
+            # This should not happen if FilterOperand is constructed correctly.
+            raise AssertionError(f"Unreachable. {operand=}")
 
-        # Handle container types: only allowed for dates.
-        if is_date_value(value):
-            return "TO_DATE(?)", value["date"]
-        
-        # If we reach this point, the value type is not supported.
-        raise ValueError(f"Unsupported filter value type: {the_type}, value: {value}")
+    def __str__(self):
+        # We do not want to print internal types.
+        # Users of langchain should see their input value in error messages.
+        assert False
+
+
+def _determine_filter_operands(operator: str, operands: any) -> list[FilterOperand]:
+    """Check that operands is a list and return list of FilterOperands."""
+    if not isinstance(operands, (list, tuple)):
+        raise ValueError(f"Operator {operator} expects list/tuple of operands, but got {operands}")
+    if len(operands) == 0:
+        raise ValueError(f"Operator {operator} expects at least 1 operand")
+    return [_determine_single_filter_operand(operator, op) for op in operands]
+
+
+def _determine_single_filter_operand(operator: str, operands: any) -> FilterOperand:
+    """Check that operands is a single value (not list/tuple) and return FilterOperand."""
+    if isinstance(operands, (list, tuple)):
+        raise ValueError(
+            f"Operator {operator} expects a single operand, but got {type(operands).__name__}: {operands}"
+        )
+    try:
+        return FilterOperand(operands)
+    except ValueError as e:
+        error_message = str(e)
+        raise ValueError(f"Operator {operator}: {error_message}")
+
+def _sql_serialize_logical_clauses(
+    sql_operator: str, sql_clauses: list[str]
+) -> str:
+    if sql_operator not in ("AND", "OR"):
+        raise ValueError(f"{sql_operator=}, is not in ('AND', 'OR')")
+    if not sql_clauses:
+        raise ValueError("sql_clauses is empty")
+    if not all(sql_clauses):
+        raise ValueError(f"Empty sql clause in {sql_clauses=}")
+    if len(sql_clauses) == 1:
+        return sql_clauses[0]
+    return f" {sql_operator} ".join([f"({clause})" for clause in sql_clauses])
 
 class CreateWhereClause:
     def __init__(self, hanaDb: Any) -> None:
@@ -61,8 +129,7 @@ class CreateWhereClause:
                 # Value is a column operator.
                 if len(value) != 1:
                     raise ValueError(
-                        "Expecting a single entry 'operator: operands'"
-                        f", but got {value=}"
+                        f"Filter expects a single 'operator: operands' entry, but got {value}"
                     )
                 operator, operands = list(value.items())[0]
                 ret_sql_clause, ret_query_tuple = (
@@ -72,154 +139,131 @@ class CreateWhereClause:
                 # Value is plain NULL.
                 ret_sql_clause = f"{self._create_selector(key)} IS NULL"
                 ret_query_tuple = []
-            elif is_date_value(value) or isinstance(value, (int, float, str, bool)):
-                # Value represents a typed SQL value.
-                # _determine_typed_sql_placeholder throws for illegal types.
-                placeholder, value = (
-                    _determine_typed_sql_placeholder(value)
-                )
-                ret_sql_clause = f"{self._create_selector(key)} = {placeholder}"
-                ret_query_tuple = [value]
             else:
-                raise ValueError(
-                    f"Invalid filter value with {key=}, {value=}"
-                )
+                # Value represents a typed SQL value (implicit $eq operator).
+                try:
+                    operand = FilterOperand(value)
+                except ValueError:
+                    raise ValueError(
+                        f"Implicit operator $eq received unsupported operand: {value!r}"
+                    )
+                sql_operand = SqlOperand(operand)
+                ret_sql_clause = f"{self._create_selector(key)} = {sql_operand.placeholder}"
+                ret_query_tuple = [sql_operand.value]
             statements.append(ret_sql_clause)
             parameters += ret_query_tuple
-        return CreateWhereClause._sql_serialize_logical_clauses(
-            "AND", statements
-        ), parameters
+        return _sql_serialize_logical_clauses("AND", statements), parameters
 
     def _sql_serialize_column_operation(
         self, column: str, operator: str, operands: any
     ) -> Tuple[str, List]:
         if operator == "$contains":
-            if not isinstance(operands, str) or not operands:
-                raise ValueError(f"Expected a non-empty string operand for {operator=}, but got {operands=}")
-            sql_placeholder, sql_value = _determine_typed_sql_placeholder(
-                operands
-            )
+            operand = _determine_single_filter_operand(operator, operands)
+            if operand.the_type != "str" or not operand.value:
+                raise ValueError(f"Operator $contains expects a non-empty string operand, but got {operand!r}")
+            sql_operand = SqlOperand(operand)
             statement = (
-                f"SCORE({sql_placeholder} IN (\"{column}\" EXACT SEARCH MODE 'text')) > 0"
+                f"SCORE({sql_operand.placeholder} IN (\"{column}\" EXACT SEARCH MODE 'text')) > 0"
             )
-            return statement, [sql_value]
+            return statement, [sql_operand.value]
         selector = self._create_selector(column)
         if operator == "$like":
-            if not isinstance(operands, str):
-                raise ValueError(f"Expected a string operand for {operator=}, but got {operands=}")
-            sql_placeholder, sql_value = _determine_typed_sql_placeholder(
-                operands
-            )
-            statement = f"{selector} LIKE {sql_placeholder}"
-            return statement, [sql_value]
+            operand = _determine_single_filter_operand(operator, operands)
+            if operand.the_type != "str":
+                raise ValueError(f"Operator $like expects a string operand, but got {operand}")
+            sql_operand = SqlOperand(operand)
+            statement = f"{selector} LIKE {sql_operand.placeholder}"
+            return statement, [sql_operand.value]
         if operator == "$between":
-            if not isinstance(operands, list) or len(operands) != 2:
-                raise ValueError(f"Expected a list of two operands for {operator=}, but got {operands=}")
-            if type(operands[0]) != type(operands[1]):
-                raise ValueError(f"Expected operands of the same type for {operator=}, but got {operands=}")
-            if isinstance(operands[0], bool) or not (isinstance(operands[0], (int, float, str)) or is_date_value(operands[0])):
-                raise ValueError(f"Expected a list of (int, float, str, date) for {operator=}, but got {operands=}")
-            from_sql_placeholder, from_sql_value = (
-                _determine_typed_sql_placeholder(operands[0])
-            )
-            to_sql_placeholder, to_sql_value = (
-                _determine_typed_sql_placeholder(operands[1])
-            )
+            filter_operands = _determine_filter_operands(operator, operands)
+            if len(filter_operands) != 2:
+                raise ValueError(f"Operator $between expects 2 operands, but got {filter_operands}")
+            from_operand, to_operand = filter_operands
+            if from_operand.the_type != to_operand.the_type:
+                raise ValueError(f"Operator $between expects operands of the same type, but got {filter_operands}")
+            if from_operand.the_type not in ("int", "float", "str", "date"):
+                raise ValueError(f"Operator $between expects operand types (int, float, str, date), but got {filter_operands}")
+            sql_from = SqlOperand(from_operand)
+            sql_to = SqlOperand(to_operand)
             statement = (
-                f"{selector} BETWEEN {from_sql_placeholder} AND {to_sql_placeholder}"
+                f"{selector} BETWEEN {sql_from.placeholder} AND {sql_to.placeholder}"
             )
-            return statement, [from_sql_value, to_sql_value]
+            return statement, [sql_from.value, sql_to.value]
         if operator in ("$in", "$nin"):
-            if not isinstance(operands, list) or len(operands) == 0:
-                raise ValueError(f"Expected a non-empty list of operands for {operator=}, but got {operands=}")
-            check_type = {type(operand) for operand in operands}
-            if len(check_type) > 1:
-                raise ValueError(f"Expected operands of the same type for {operator=}, but got {operands=}")
-            if not (list(check_type)[0] in (int, float, str, bool) or all(is_date_value(operand) for operand in operands)):
-                raise ValueError(f"Expected a list of (int, float, str, bool, date) for {operator=}, but got {operands=}")
-            sql_placeholder_value_list = [
-                _determine_typed_sql_placeholder(item)
-                for item in operands
-            ]
-            if operator == "$in":
-                sql_operator = "IN"
-            if operator == "$nin":
-                sql_operator = "NOT IN"
-            placeholders = ", ".join([item[0] for item in sql_placeholder_value_list])
-            sql_values = [item[1] for item in sql_placeholder_value_list]
-            statement = f"{selector} {sql_operator} ({placeholders})"
+            sql_operator = {
+                "$in": "IN",
+                "$nin": "NOT IN",
+            }[operator]
+            filter_operands = _determine_filter_operands(operator, operands)
+            for op in filter_operands:
+                if op.the_type != filter_operands[0].the_type:
+                    raise ValueError(f"Operator {operator} expects operands of the same type, but got {operands}")
+            sql_operands = [SqlOperand(op) for op in filter_operands]
+            sql_placeholders = [sql_operand.placeholder for sql_operand in sql_operands]
+            sql_values = [sql_operand.value for sql_operand in sql_operands]
+            statement = f"{selector} {sql_operator} ({', '.join(sql_placeholders)})"
             return statement, sql_values
         if operator in ("$eq", "$ne"):
-            if not (isinstance(operands, (int, float, str, bool)) or is_date_value(operands) or operands is None):
-                raise ValueError(f"Expected a (int, float, str, bool, date, None) for {operator=}, but got {operands=}")
             # Allow null checks for equality operators.
             if operands is None:
-                if operator == "$eq":
-                    sql_operator = "IS NULL"
-                if operator == "$ne":
-                    sql_operator = "IS NOT NULL"
-                statement = f"{selector} {sql_operator}"
+                sql_operation = {
+                    "$eq": "IS NULL",
+                    "$ne": "IS NOT NULL",
+                }[operator]
+                statement = f"{selector} {sql_operation}"
                 return statement, []
-            sql_operator = "=" if operator == "$eq" else "<>"
-            sql_placeholder, sql_value = _determine_typed_sql_placeholder(operands)
-            statement = f"{selector} {sql_operator} {sql_placeholder}"
-            return statement, [sql_value]
+            sql_operator = {
+                "$eq": "=",
+                "$ne": "<>",
+            }[operator]
+            operand = _determine_single_filter_operand(operator, operands)
+            sql_operand = SqlOperand(operand)
+            statement = f"{selector} {sql_operator} {sql_operand.placeholder}"
+            return statement, [sql_operand.value]
         if operator in ("$gt", "$gte", "$lt", "$lte"):
-            if  isinstance(operands, bool) or not (isinstance(operands, (int, float, str)) or is_date_value(operands)):
-                raise ValueError(f"Expected a (int, float, str, date) for {operator=}, but got {operands=}")
-            comparisons_to_sql = {
+            operand = _determine_single_filter_operand(operator, operands)
+            
+            # Check if the operand type is allowed for comparison operators.
+            if operand.the_type not in ("int", "float", "str", "date"):
+                raise ValueError(
+                    f"Operator {operator} expects operand of type int/float/str/date, but got {operand}"
+                )
+            
+            sql_operator = {
                 "$gt": ">",
                 "$gte": ">=",
                 "$lt": "<",
                 "$lte": "<=",
-            }
-            sql_operator = comparisons_to_sql[operator]
-            sql_placeholder, sql_value = _determine_typed_sql_placeholder(operands)
-            statement = f"{selector} {sql_operator} {sql_placeholder}"
-            return statement, [sql_value]
+            }[operator]
+            sql_operand = SqlOperand(operand)
+            statement = f"{selector} {sql_operator} {sql_operand.placeholder}"
+            return statement, [sql_operand.value]
         
         # Unknown operation if we reach this point.
-        raise ValueError(f"Unsupported column operation for {operator=}, {operands=}")
-
-    @staticmethod
-    def _sql_serialize_logical_clauses(
-        sql_operator: str, sql_clauses: list[str]
-    ) -> str:
-        if sql_operator not in ("AND", "OR"):
-            raise ValueError(f"{sql_operator=}, is not in ('AND', 'OR')")
-        if not sql_clauses:
-            raise ValueError("sql_clauses is empty")
-        if not all(sql_clauses):
-            raise ValueError(f"Empty sql clause in {sql_clauses=}")
-        if len(sql_clauses) == 1:
-            return sql_clauses[0]
-        return f" {sql_operator} ".join([f"({clause})" for clause in sql_clauses])
+        raise ValueError(f"Operator {operator} is not supported")
 
     def _sql_serialize_logical_operation(
         self, operator: str, operands: List
     ) -> Tuple[str, List]:
     
-        if not isinstance(operands, list) or len(operands) < 2:
-            raise ValueError(f"Expected a list of atleast two operands for {operator=}, but got {operands=}")
+        if not isinstance(operands, list):
+            raise ValueError(f"Operator {operator} expects a list of operands, but got {operands!r}")
+        if len(operands) < 2:
+            raise ValueError(f"Operator {operator} expects at least 2 operands, but got {operands!r}")
         if operator in ("$and", "$or"):
             sql_clauses, query_tuple = [], []
             for operand in operands:
                 ret_sql_clause, ret_query_tuple = self._create_where_clause(operand)
                 sql_clauses.append(ret_sql_clause)
                 query_tuple += ret_query_tuple
-                logical_operators_to_sql = {
+                sql_operator = {
                     "$and": "AND",
                     "$or": "OR",
-                }
-            return (
-                CreateWhereClause._sql_serialize_logical_clauses(
-                    logical_operators_to_sql[operator], sql_clauses
-                ),
-                query_tuple,
-            )
+                }[operator]
+            return _sql_serialize_logical_clauses(sql_operator, sql_clauses), query_tuple
         
         # If we reach this point, the operator is not supported.
-        raise ValueError(f"Unsupported logical operation for {operator=}, {operands=}")
+        raise ValueError(f"Operator {operator} is not supported")
 
     def _create_selector(self, column: str) -> str:
         if column in self.specific_metadata_columns:
