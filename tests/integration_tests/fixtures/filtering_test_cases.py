@@ -467,11 +467,11 @@ ERROR_FILTERING_TEST_CASES = [
     # # contains operator
     (
         {"tags": {"$contains": ""}},
-        "Operator $contains expects a non-empy string operand, but got '' (str)"
+        "Operator $contains expects a non-empty string operand, but got '' (str)"
     ),
     (
         {"tags": {"$contains": 5}},
-        "Operator $contains expects a non-empy string operand, but got 5 (int)"
+        "Operator $contains expects a non-empty string operand, but got 5 (int)"
     ),
     # # like operator
     (

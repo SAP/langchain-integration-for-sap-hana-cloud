@@ -166,7 +166,7 @@ class CreateWhereClause:
         if operator == "$contains":
             operand = _determine_single_filter_operand(operator, operands)
             if operand.the_type != "str" or not operand.value:
-                raise ValueError(f"Operator $contains expects a non-empy string operand, but got {operand!r}")
+                raise ValueError(f"Operator $contains expects a non-empty string operand, but got {operand!r}")
             sql_operand = SqlOperand(operand)
             statement = (
                 f"SCORE({sql_operand.placeholder} IN (\"{column}\" EXACT SEARCH MODE 'text')) > 0"
