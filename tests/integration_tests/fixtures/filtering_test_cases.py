@@ -473,10 +473,18 @@ ERROR_FILTERING_TEST_CASES = [
         {"tags": {"$contains": 5}},
         "Operator $contains expects a non-empty string operand, but got 5 (int)"
     ),
+    (
+        {"tags": {"$contains": {"unexpected": "dict"}}},
+        "Operator $contains: Operand cannot be created from {'unexpected': 'dict'}"
+    ),
     # # like operator
     (
         {"name": {"$like": False}},
         "Operator $like expects a string operand, but got False (bool)"
+    ),
+    (
+        {"name": {"$like": {"unexpected": "dict"}}},
+        "Operator $like: Operand cannot be created from {'unexpected': 'dict'}"
     ),
     # between operator
     (
@@ -526,6 +534,10 @@ ERROR_FILTERING_TEST_CASES = [
         "Operator $eq expects a single operand, but got list: ['unexpected', 'list']"
     ),
     (
+        {"name": {"$eq": {"unexpected": "dict"}}},
+        "Operator $eq: Operand cannot be created from {'unexpected': 'dict'}"
+    ),
+    (
         {"name": {"$ne": {"unexpected": "dict"}}},
         "Operator $ne: Operand cannot be created from {'unexpected': 'dict'}"
     ),
@@ -535,16 +547,32 @@ ERROR_FILTERING_TEST_CASES = [
         "Operator $gt expects a single operand, but got list: ['unexpected', 'list']"
     ),
     (
+        {"name": {"$gt": {"unexpected": "dict"}}},
+        "Operator $gt: Operand cannot be created from {'unexpected': 'dict'}"
+    ),
+    (
         {"name": {"$gte": False}},
         "Operator $gte expects operand of type int/float/str/date, but got False (bool)"
+    ),
+    (
+        {"name": {"$gte": {"unexpected": "dict"}}},
+        "Operator $gte: Operand cannot be created from {'unexpected': 'dict'}"
     ),
     (
         {"name": {"$lt": ["unexpected", "list"]}},
         "Operator $lt expects a single operand, but got list: ['unexpected', 'list']"
     ),
     (
+        {"name": {"$lt": {"unexpected": "dict"}}},
+        "Operator $lt: Operand cannot be created from {'unexpected': 'dict'}"
+    ),
+    (
         {"name": {"$lte": True}},
         "Operator $lte expects operand of type int/float/str/date, but got True (bool)"
+    ),
+    (
+        {"name": {"$lte": {"unexpected": "dict"}}},
+        "Operator $lte: Operand cannot be created from {'unexpected': 'dict'}"
     ),
     # date operand errors
     (
