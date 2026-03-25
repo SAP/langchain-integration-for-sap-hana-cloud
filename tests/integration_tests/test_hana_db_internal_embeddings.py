@@ -83,7 +83,7 @@ def build_rerank_config(base_config: dict[str, Any] | None, top_n: int, query: s
     return result
 
 
-pytest.fixture(params=[
+@pytest.fixture(params=[
     ({"query": 5}, "rerank_config must contain 'query' and it must be a non-empty string"),
     ({"top_n": "not_an_int"}, "rerank_config 'top_n' must be a positive integer"),
     ({"model_id": 5}, "rerank_config 'model_id' must be a non-empty string"),
