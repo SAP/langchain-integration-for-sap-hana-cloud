@@ -281,6 +281,12 @@ class HanaDB(VectorStore):
                 raise ValueError(f"Invalid metadata key {key}")
 
         return metadata
+    
+    @staticmethod
+    def _sanitize_rank_fields(rank_fields: list[str]) -> list[str]:
+        for field in rank_fields:
+            if not HanaDB._compiled_pattern.match(field):
+                raise ValueError(f"Invalid rank field {field}")
 
     @staticmethod
     def _sanitize_specific_metadata_columns(
@@ -709,30 +715,35 @@ class HanaDB(VectorStore):
         instance.add_texts(texts, metadatas)
         return instance
     
-    def _generate_cross_encode_sql_and_params(self, text_column: str, query: str, rerank_model_id: str, rerank_remote_source: str) -> tuple[str, list]:
-        cross_encode_params = [query, rerank_model_id]
-        if rerank_remote_source:
-            cross_encode_sql = f'CROSS_ENCODE(TO_NVARCHAR({text_column}), ?, ?, "{rerank_remote_source}") OVER()'
+    def _generate_cross_encode_sql_and_params(self, text_column: str, query: str, rank_fields: list[str], rerank_model_id: str) -> tuple[str, list]:
+        if rank_fields:
+            cross_encode_input = f"'{text_column}:' || TO_NVARCHAR({text_column})"
+            for field in rank_fields:
+                cross_encode_input += f"|| '| {field}:' || TO_NVARCHAR(COALESCE(JSON_VALUE({self.metadata_column}, '$.{field}'), ''))"
         else:
-            cross_encode_sql = f"CROSS_ENCODE(TO_NVARCHAR({text_column}), ?, ?) OVER()"
+            cross_encode_input = f"TO_NVARCHAR({text_column})"
+
+        cross_encode_sql = f"CROSS_ENCODE({cross_encode_input}, ?, ?) OVER()"
+        
+        cross_encode_params = [query, rerank_model_id]
         return cross_encode_sql, cross_encode_params
     
-    def _validate_rerank_config(self, rerank_config: dict) -> None:
+    @staticmethod
+    def _validate_rerank_config(rerank_config: dict) -> None:
         if not isinstance(rerank_config, dict):
             raise ValueError("rerank_config must be a dictionary")
         if "query" not in rerank_config or not isinstance(rerank_config["query"], str) or not rerank_config["query"]:
             raise ValueError("rerank_config must contain 'query' and it must be a non-empty string")
-        if "model_id" in rerank_config and (not isinstance(rerank_config["model_id"], str) or not rerank_config["model_id"]):
-            raise ValueError("rerank_config 'model_id' must be a non-empty string")
         if "top_n" in rerank_config and (not isinstance(rerank_config["top_n"], int) or rerank_config["top_n"] <= 0):
             raise ValueError("rerank_config 'top_n' must be a positive integer")
-        
-        rerank_config.setdefault("top_n", 3)  # Default top_n to 3
-        rerank_model_id = rerank_config.setdefault("model_id", "SAP_CER.20250701") # Default model_id
-        remote_source = rerank_config.setdefault("remote_source", "") # Default remote_source to empty string
-        self._validate_rerank_model_id(rerank_model_id, remote_source)
+        if "rank_fields" in rerank_config:
+            if not isinstance(rerank_config["rank_fields"], list) or not all(isinstance(field, str) for field in rerank_config["rank_fields"]):
+                raise ValueError("rerank_config 'rank_fields' must be a list of strings")
+            HanaDB._sanitize_rank_fields(rerank_config["rank_fields"])
+        if "model_id" not in rerank_config or not isinstance(rerank_config["model_id"], str) or not rerank_config["model_id"]:
+            raise ValueError("rerank_config 'model_id' must be a non-empty string")
 
-    def _validate_rerank_model_id(self, rerank_model_id: str, rerank_remote_source: str) -> None:
+    def _validate_rerank_model_id(self, rerank_model_id: str) -> None:
         if not isinstance(rerank_model_id, str) or not rerank_model_id:
             raise ValueError("rerank_model_id must be a non-empty string")
         with self.connection.cursor() as cur:
@@ -740,18 +751,14 @@ class HanaDB(VectorStore):
                 cur.execute(
                     # CROSS_ENCODE IS A WINDOW FUNCTION
                     # passing a single text through a "'test'""
-                    f"SELECT {self._generate_cross_encode_sql_and_params("'test'", 'test', rerank_model_id, rerank_remote_source)[0]} FROM SYS.DUMMY", ['test', rerank_model_id]
+                    f"SELECT {self._generate_cross_encode_sql_and_params("'test'", 'test', [], rerank_model_id)[0]} FROM SYS.DUMMY", ['test', rerank_model_id]
                 )
-                if cur.has_result_set():
-                    rows = cur.fetchall()
-                    if rows[0][0] == 0:
-                        raise ValueError(f"Rerank model '{rerank_model_id}' does not exist in the database.")
             except dbapi.Error as e:
                 logger.error(f"Database error while validating rerank model ID: {e}")
                 raise
         
     def similarity_search(  # type: ignore[override]
-        self, query: str, k: int = 4, filter: Optional[dict] = None, *, rerank_config: Optional[dict] = None
+        self, query: str, k: int = 4, filter: Optional[dict] = None, *, rerank_config: Optional[dict[str, Any]] = None
     ) -> list[Document]:
         """Return docs most similar to query.
 
@@ -762,21 +769,24 @@ class HanaDB(VectorStore):
                     Defaults to None.
             rerank_config: Optional dictionary for reranking configuration with the following keys.
                 Defaults to None, which means no reranking will be applied.
-                - query (str): The query to use for reranking. Required if reranking is desired.
-                - model_id (str): The model ID to use for reranking. Optional, defaults to "SAP_CER.20250701".
+                - query (str): The query to use for reranking. If not provided, the similarity search query will be used.
                 - top_n (int): The number of top results to consider for reranking. Optional, defaults to 3.
-                - remote_source (str): The remote source to use for reranking. Optional, defaults to an empty string.
+                - rank_fields: list of fields to use for reranking. Optional, defaults to an empty list, which means only the content column will be used.
+                - model_id (str): The model ID to use for reranking.
 
         Returns:
             List of Documents most similar to the query
         """
+        if rerank_config and not rerank_config.get("query"):
+            rerank_config["query"] = query  # Use the original query if no specific rerank query is provided
+
         docs_and_scores = self.similarity_search_with_score(
             query=query, k=k, filter=filter, rerank_config=rerank_config
         )
         return [doc for doc, _ in docs_and_scores]
 
     def similarity_search_with_score(
-        self, query: str, k: int = 4, filter: Optional[dict] = None, *, rerank_config: Optional[dict] = None
+        self, query: str, k: int = 4, filter: Optional[dict] = None, *, rerank_config: Optional[dict[str, Any]] = None
     ) -> list[tuple[Document, float]]:
         """Return documents and score values most similar to query.
 
@@ -787,15 +797,18 @@ class HanaDB(VectorStore):
                     Defaults to None.
             rerank_config: Optional dictionary for reranking configuration with the following keys.
                 Defaults to None, which means no reranking will be applied.
-                - query (str): The query to use for reranking. Required if reranking is desired.
-                - model_id (str): The model ID to use for reranking. Optional, defaults to "SAP_CER.20250701".
+                - query (str): The query to use for reranking. If not provided, the similarity search query will be used.
                 - top_n (int): The number of top results to consider for reranking. Optional, defaults to 3.
-                - remote_source (str): The remote source to use for reranking. Optional, defaults to an empty string.
+                - rank_fields: list of fields to use for reranking. Optional, defaults to an empty list, which means only the content column will be used.
+                - model_id (str): The model ID to use for reranking.
 
         Returns:
             List of tuples (containing a Document and a score) that are
             most similar to the query
         """
+
+        if rerank_config and not rerank_config.get("query"):
+            rerank_config["query"] = query  # Use the original query if no specific rerank query is provided
 
         if self.use_internal_embeddings:
             # Internal embeddings: pass the query directly
@@ -812,7 +825,7 @@ class HanaDB(VectorStore):
         return [(result_item[0], result_item[1]) for result_item in whole_result]
 
     def similarity_search_with_score_and_vector_by_vector(
-        self, embedding: list[float], k: int = 4, filter: Optional[dict] = None, *, rerank_config: Optional[dict] = None
+        self, embedding: list[float], k: int = 4, filter: Optional[dict] = None, *, rerank_config: Optional[dict[str, Any]] = None
     ) -> list[tuple[Document, float, list[float]]]:
         """Return docs most similar to the given embedding.
 
@@ -824,9 +837,9 @@ class HanaDB(VectorStore):
             rerank_config: Optional dictionary for reranking configuration with the following keys.
                 Defaults to None, which means no reranking will be applied.
                 - query (str): The query to use for reranking. Required if reranking is desired.
-                - model_id (str): The model ID to use for reranking. Optional, defaults to "SAP_CER.20250701".
                 - top_n (int): The number of top results to consider for reranking. Optional, defaults to 3.
-                - remote_source (str): The remote source to use for reranking. Optional, defaults to an empty string.
+                - rank_fields: list of fields to use for reranking. Optional, defaults to an empty list, which means only the content column will be used.
+                - model_id (str): The model ID to use for reranking.
 
         Returns:
             List of tuples, each containing:
@@ -842,7 +855,7 @@ class HanaDB(VectorStore):
         )
 
     def similarity_search_with_score_and_vector_by_query(
-        self, query: str, k: int = 4, filter: Optional[dict] = None, *, rerank_config: Optional[dict] = None
+        self, query: str, k: int = 4, filter: Optional[dict] = None, *, rerank_config: Optional[dict[str, Any]] = None
     ) -> list[tuple[Document, float, list[float]]]:
         """
         Return docs most similar to the given query.
@@ -860,10 +873,10 @@ class HanaDB(VectorStore):
                     Defaults to None.
             rerank_config: Optional dictionary for reranking configuration with the following keys.
                 Defaults to None, which means no reranking will be applied.
-                - query (str): The query to use for reranking. Required if reranking is desired.
-                - model_id (str): The model ID to use for reranking. Optional, defaults to "SAP_CER.20250701".
+                - query (str): The query to use for reranking. If not provided, the similarity search query will be used.
                 - top_n (int): The number of top results to consider for reranking. Optional, defaults to 3.
-                - remote_source (str): The remote source to use for reranking. Optional, defaults to an empty string.
+                - rank_fields: list of fields to use for reranking. Optional, defaults to an empty list, which means only the content column will be used.
+                - model_id (str): The model ID to use for reranking.
 
         Returns:
             List of tuples, each containing:
@@ -878,6 +891,9 @@ class HanaDB(VectorStore):
                 "HanaInternalEmbeddings to use the method "
                 "similarity_search_with_score_and_vector_by_query"
             )
+        
+        if rerank_config and not rerank_config.get("query"):
+            rerank_config["query"] = query  # Use the original query if no specific rerank query is provided
 
         vector_embedding_sql, vector_embedding_params = self._generate_vector_embedding_sql_and_params(query, 'QUERY')
         # Wrap VECTOR_EMBEDDING with vector type conversion if needed
@@ -899,7 +915,7 @@ class HanaDB(VectorStore):
         k: int,
         filter: Optional[dict] = None,
         vector_embedding_params: Optional[dict] = None,
-        rerank_config: Optional[dict] = None,
+        rerank_config: Optional[dict[str, Any]] = None,
     ) -> list[tuple[Document, float, list[float]]]:
         """Perform similarity search and return documents with scores and vectors.
 
@@ -917,9 +933,9 @@ class HanaDB(VectorStore):
             rerank_config: Optional dictionary for reranking configuration with the following keys.
                 Defaults to None, which means no reranking will be applied.
                 - query (str): The query to use for reranking. Required if reranking is desired.
-                - model_id (str): The model ID to use for reranking. Optional, defaults to "SAP_CER.20250701".
                 - top_n (int): The number of top results to consider for reranking. Optional, defaults to 3.
-                - remote_source (str): The remote source to use for reranking. Optional, defaults to an empty string.
+                - rank_fields: list of fields to use for reranking. Optional, defaults to an empty list, which means only the content column will be used.
+                - model_id (str): The model ID to use for reranking.
 
         Returns:
             List of tuples, each containing:
@@ -965,18 +981,23 @@ class HanaDB(VectorStore):
         sql_str += f" order by CS {HANA_DISTANCE_FUNCTION[self.distance_strategy][1]}"
 
         if rerank_config:
-            self._validate_rerank_config(rerank_config)
+            HanaDB._validate_rerank_config(rerank_config)
+            rerank_top_n = rerank_config.setdefault("top_n", 3)  # Default top_n to 3
+            rerank_rank_fields = rerank_config.setdefault("rank_fields", [])  # Default rank_fields to empty list
             rerank_model_id = rerank_config["model_id"]
-            rerank_remote_source = rerank_config["remote_source"]
-            rerank_top_n = rerank_config["top_n"]
+
+            self._validate_rerank_model_id(rerank_model_id)
+
             rerank_query = rerank_config["query"]
+            
             if rerank_top_n > k:
                 raise ValueError("rerank_config 'top_n' cannot be greater than k")
+            
             cross_encoding_sql, cross_encoding_params = self._generate_cross_encode_sql_and_params(
                 text_column=self.content_column,
                 query=rerank_query,
+                rank_fields=rerank_rank_fields,
                 rerank_model_id=rerank_model_id,
-                rerank_remote_source=rerank_remote_source
             )
             sql_str = f"""
             SELECT TOP {rerank_top_n}
@@ -1090,7 +1111,7 @@ class HanaDB(VectorStore):
         )
 
     def similarity_search_by_vector(  # type: ignore[override]
-        self, embedding: list[float], k: int = 4, filter: Optional[dict] = None, *, rerank_config: Optional[dict] = None
+        self, embedding: list[float], k: int = 4, filter: Optional[dict] = None, *, rerank_config: Optional[dict[str, Any]] = None
     ) -> list[Document]:
         """Return docs most similar to embedding vector.
 
@@ -1102,8 +1123,9 @@ class HanaDB(VectorStore):
             rerank_config: Optional dictionary for reranking configuration with the following keys.
                 Defaults to None, which means no reranking will be applied.
                 - query (str): The query to use for reranking. Required if reranking is desired.
-                - model_id (str): The model ID to use for reranking. Optional, defaults to "SAP_CER.20250701".
                 - top_n (int): The number of top results to consider for reranking. Optional, defaults to 3.
+                - rank_fields: list of fields to use for reranking. Optional, defaults to an empty list, which means only the content column will be used.
+                - model_id (str): The model ID to use for reranking.
                 - remote_source (str): The remote source to use for reranking. Optional, defaults to an empty string.
 
         Returns:

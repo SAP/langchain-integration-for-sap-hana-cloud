@@ -108,20 +108,35 @@ def table_name_with_cleanup():
 
 @pytest.fixture(params=[
     None, 
-    {"query": HanaTestConstants.TEXTS[0], "model_id": os.environ["HANA_DB_RERANK_MODEL_ID"]}
-], ids=["no_rerank", "with_rerank"])
+    {"model_id": os.environ["HANA_DB_RERANK_MODEL_ID"]},
+    {"model_id": os.environ["HANA_DB_RERANK_MODEL_ID"], "rank_fields": ["start", "ready"]}
+
+], ids=["no_rerank", "with_rerank", "with_rerank_and_rank_fields"])
 def rerank_config_param(request):  # type: ignore[no-untyped-def]
     """Parametrize rerank_config for similarity search tests."""
     return request.param
 
 
-def build_rerank_config(base_config: Dict[str, Any] | None, k: int) -> Dict[str, Any] | None:
+def build_rerank_config(base_config: dict[str, Any] | None, top_n: int, query: str | None = None) -> dict[str, Any] | None:
     """Build full rerank_config by adding top_n to base config."""
     if base_config is None:
         return None
     result = base_config.copy()
-    result["top_n"] = k
+    if query is not None:
+        result["query"] = query
+    result["top_n"] = top_n
     return result
+
+
+@pytest.fixture(params=[
+    ({"query": 5}, "rerank_config must contain 'query' and it must be a non-empty string"),
+    ({"top_n": "not_an_int"}, "rerank_config 'top_n' must be a positive integer"),
+    ({"model_id": 5}, "rerank_config 'model_id' must be a non-empty string"),
+    ({"rank_fields": "not_a_list"}, "rerank_config 'rank_fields' must be a list of strings"),
+    ({"rank_fields": [1, 2, 3]}, "rerank_config 'rank_fields' must be a list of strings")
+], ids=["query_not_str", "top_n_not_int", "model_id_not_str", "rank_fields_not_list", "rank_fields_not_str"])
+def invalid_rerank_config_with_error_message(request):
+    return request.param
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
@@ -304,7 +319,7 @@ def test_hanavector_from_texts(table_name_with_cleanup) -> None:
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_simple(vectorDB) -> None:
     vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
-    rerank_config = build_rerank_config(rerank_config_param, k=1)
+    rerank_config = build_rerank_config(rerank_config_param, top_n=1)
 
     assert (
         HanaTestConstants.TEXTS[0]
@@ -324,9 +339,16 @@ def test_hanavector_similarity_search_simple_invalid(vectorDB, k: int) -> None:
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
+def test_hanavector_similarity_search_simple_invalid_rerank_config(vectorDB, invalid_rerank_config_with_error_message) -> None:
+    invalid_rerank_config, expected_error_message = invalid_rerank_config_with_error_message
+    with pytest.raises(ValueError, match=expected_error_message):
+        vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 1, rerank_config=invalid_rerank_config)
+
+
+@pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_by_vector_simple(vectorDB, rerank_config_param) -> None:
     vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
-    rerank_config = build_rerank_config(rerank_config_param, k=1)
+    rerank_config = build_rerank_config(rerank_config_param, query=HanaTestConstants.TEXTS[0], top_n=1)
 
     vector = embedding.embed_query(HanaTestConstants.TEXTS[0])
     assert (
@@ -344,14 +366,23 @@ def test_hanavector_similarity_search_by_vector_simple(vectorDB, rerank_config_p
 def test_hanavector_similarity_search_by_vector_simple_invalid(
     vectorDB, k: int
 ) -> None:
+    vector = embedding.embed_query(HanaTestConstants.TEXTS[0])
     with pytest.raises(ValueError, match="must be an integer greater than 0"):
-        vectorDB.similarity_search_by_vector(HanaTestConstants.TEXTS[0], k)
+        vectorDB.similarity_search_by_vector(vector, k)
+
+
+@pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
+def test_hanavector_similarity_search_by_vector_simple_invalid_rerank_config(vectorDB, invalid_rerank_config_with_error_message) -> None:
+    invalid_rerank_config, expected_error_message = invalid_rerank_config_with_error_message
+    vector = embedding.embed_query(HanaTestConstants.TEXTS[0])
+    with pytest.raises(ValueError, match=expected_error_message):
+        vectorDB.similarity_search_by_vector(vector, 1, rerank_config=invalid_rerank_config)
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_simple_euclidean_distance(table_name_with_cleanup, rerank_config_param) -> None:
     table_name = table_name_with_cleanup
-    rerank_config = build_rerank_config(rerank_config_param, k=1)
+    rerank_config = build_rerank_config(rerank_config_param, top_n=1)
 
     # Check if table is created
     vectorDB = HanaDB.from_texts(
@@ -373,13 +404,31 @@ def test_hanavector_similarity_search_simple_euclidean_distance(table_name_with_
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
+def test_hanavector_similarity_search_simple_euclidean_distance_invalid_rerank_config(table_name_with_cleanup, invalid_rerank_config_with_error_message) -> None:
+    table_name = table_name_with_cleanup
+    invalid_rerank_config, expected_error_message = invalid_rerank_config_with_error_message
+
+    # Check if table is created
+    vectorDB = HanaDB.from_texts(
+        connection=config.conn,
+        texts=HanaTestConstants.TEXTS,
+        embedding=embedding,
+        table_name=table_name,
+        distance_strategy=DistanceStrategy.EUCLIDEAN_DISTANCE,
+    )
+    
+    with pytest.raises(ValueError, match=expected_error_message):
+        vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 1, rerank_config=invalid_rerank_config)
+
+
+@pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_with_metadata(
     vectorDB, rerank_config_param
 ) -> None:
     vectorDB.add_texts(
         texts=HanaTestConstants.TEXTS, metadatas=HanaTestConstants.METADATAS
     )
-    rerank_config = build_rerank_config(rerank_config_param, k=3)
+    rerank_config = build_rerank_config(rerank_config_param, top_n=3)
 
     search_result = vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 3, rerank_config=rerank_config)
 
@@ -392,13 +441,27 @@ def test_hanavector_similarity_search_with_metadata(
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
+def test_hanavector_similarity_search_with_metadata_invalid_rerank_config(
+    vectorDB, invalid_rerank_config_with_error_message
+) -> None:
+    invalid_rerank_config, expected_error_message = invalid_rerank_config_with_error_message
+
+    vectorDB.add_texts(
+        texts=HanaTestConstants.TEXTS, metadatas=HanaTestConstants.METADATAS
+    )
+
+    with pytest.raises(ValueError, match=expected_error_message):
+        vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 3, rerank_config=invalid_rerank_config)
+
+
+@pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_with_metadata_filter(
     vectorDB, rerank_config_param
 ) -> None:
     vectorDB.add_texts(
         texts=HanaTestConstants.TEXTS, metadatas=HanaTestConstants.METADATAS
     )
-    rerank_config = build_rerank_config(rerank_config_param, k=3)
+    rerank_config = build_rerank_config(rerank_config_param, top_n=3)
 
     search_result = vectorDB.similarity_search(
         HanaTestConstants.TEXTS[0], 3, filter={"start": 100}, rerank_config=rerank_config
@@ -424,13 +487,27 @@ def test_hanavector_similarity_search_with_metadata_filter(
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
+def test_hanavector_similarity_search_with_metadata_filter_invalid_rerank_config(
+    vectorDB, invalid_rerank_config_with_error_message
+) -> None:
+    invalid_rerank_config, expected_error_message = invalid_rerank_config_with_error_message
+
+    vectorDB.add_texts(
+        texts=HanaTestConstants.TEXTS, metadatas=HanaTestConstants.METADATAS
+    )
+
+    with pytest.raises(ValueError, match=expected_error_message):
+        vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 3, filter={"start": 100}, rerank_config=invalid_rerank_config)
+
+
+@pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_with_metadata_filter_string(
     vectorDB, rerank_config_param
 ) -> None:
     vectorDB.add_texts(
         texts=HanaTestConstants.TEXTS, metadatas=HanaTestConstants.METADATAS
     )
-    rerank_config = build_rerank_config(rerank_config_param, k=3)
+    rerank_config = build_rerank_config(rerank_config_param, top_n=3)
 
     search_result = vectorDB.similarity_search(
         HanaTestConstants.TEXTS[0], 3, filter={"quality": "bad"}, rerank_config=rerank_config
@@ -441,13 +518,27 @@ def test_hanavector_similarity_search_with_metadata_filter_string(
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
+def test_hanavector_similarity_search_with_metadata_filter_string_invalid_rerank_config(
+    vectorDB, invalid_rerank_config_with_error_message
+) -> None:
+    invalid_rerank_config, expected_error_message = invalid_rerank_config_with_error_message
+
+    vectorDB.add_texts(
+        texts=HanaTestConstants.TEXTS, metadatas=HanaTestConstants.METADATAS
+    )
+
+    with pytest.raises(ValueError, match=expected_error_message):
+        vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 3, filter={"quality": "bad"}, rerank_config=invalid_rerank_config)
+
+
+@pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_with_metadata_filter_bool(
     vectorDB, rerank_config_param
 ) -> None:
     vectorDB.add_texts(
         texts=HanaTestConstants.TEXTS, metadatas=HanaTestConstants.METADATAS
     )
-    rerank_config = build_rerank_config(rerank_config_param, k=3)
+    rerank_config = build_rerank_config(rerank_config_param, top_n=3)
 
     search_result = vectorDB.similarity_search(
         HanaTestConstants.TEXTS[0], 3, filter={"ready": False}, rerank_config=rerank_config
@@ -455,6 +546,20 @@ def test_hanavector_similarity_search_with_metadata_filter_bool(
 
     assert len(search_result) == 1
     assert HanaTestConstants.TEXTS[1] == search_result[0].page_content
+
+
+@pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
+def test_hanavector_similarity_search_with_metadata_filter_bool_invalid_rerank_config(
+    vectorDB, invalid_rerank_config_with_error_message
+) -> None:
+    invalid_rerank_config, expected_error_message = invalid_rerank_config_with_error_message
+
+    vectorDB.add_texts(
+        texts=HanaTestConstants.TEXTS, metadatas=HanaTestConstants.METADATAS
+    )
+
+    with pytest.raises(ValueError, match=expected_error_message):
+        vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 3, filter={"ready": False}, rerank_config=invalid_rerank_config)
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
@@ -478,24 +583,37 @@ def test_hanavector_similarity_search_with_metadata_filter_invalid_type(
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_with_score(vectorDB, rerank_config_param) -> None:
     vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
-    rerank_config = build_rerank_config(rerank_config_param, k=3)
+    rerank_config = build_rerank_config(rerank_config_param, top_n=3)
 
     search_result = vectorDB.similarity_search_with_score(HanaTestConstants.TEXTS[0], 3, rerank_config=rerank_config)
 
-    assert search_result[0][0].page_content == HanaTestConstants.TEXTS[0]
-    assert search_result[0][1] == 1.0
-    assert search_result[1][1] <= search_result[0][1]
-    assert search_result[2][1] <= search_result[1][1]
-    assert search_result[2][1] >= 0.0
+    if rerank_config:
+        assert search_result[0][0].page_content == HanaTestConstants.TEXTS[0]
+    else:
+        assert search_result[0][0].page_content == HanaTestConstants.TEXTS[0]
+        assert search_result[0][1] == 1.0
+
+    prev_score = 1.0
+    for doc, score in search_result:
+        assert score <= prev_score  # Scores should be in descending order
+        prev_score = score
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_similarity_search_with_relevance_score(vectorDB, rerank_config_param) -> None:
+def test_hanavector_similarity_search_with_score_invalid_rerank_config(vectorDB, invalid_rerank_config_with_error_message) -> None:
+    invalid_rerank_config, expected_error_message = invalid_rerank_config_with_error_message
     vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
-    rerank_config = build_rerank_config(rerank_config_param, k=3)
+
+    with pytest.raises(ValueError, match=expected_error_message):
+        vectorDB.similarity_search_with_score(HanaTestConstants.TEXTS[0], 3, rerank_config=invalid_rerank_config)
+
+
+@pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
+def test_hanavector_similarity_search_with_relevance_score(vectorDB) -> None:
+    vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
 
     search_result = vectorDB.similarity_search_with_relevance_scores(
-        HanaTestConstants.TEXTS[0], 3, rerank_config=rerank_config
+        HanaTestConstants.TEXTS[0], 3
     )
 
     assert search_result[0][0].page_content == HanaTestConstants.TEXTS[0]
@@ -506,11 +624,10 @@ def test_hanavector_similarity_search_with_relevance_score(vectorDB, rerank_conf
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_similarity_search_with_relevance_score_with_euclidian_distance(table_name_with_cleanup, rerank_config_param) -> (
+def test_hanavector_similarity_search_with_relevance_score_with_euclidian_distance(table_name_with_cleanup) -> (
     None
 ):
     table_name = table_name_with_cleanup
-    rerank_config = build_rerank_config(rerank_config_param, k=3)
 
     # Check if table is created
     vectorDB = HanaDB.from_texts(
@@ -522,7 +639,7 @@ def test_hanavector_similarity_search_with_relevance_score_with_euclidian_distan
     )
 
     search_result = vectorDB.similarity_search_with_relevance_scores(
-        HanaTestConstants.TEXTS[0], 3, rerank_config=rerank_config
+        HanaTestConstants.TEXTS[0], 3
     )
 
     assert search_result[0][0].page_content == HanaTestConstants.TEXTS[0]
@@ -535,7 +652,7 @@ def test_hanavector_similarity_search_with_relevance_score_with_euclidian_distan
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_with_score_with_euclidian_distance(table_name_with_cleanup, rerank_config_param) -> None:
     table_name = table_name_with_cleanup
-    rerank_config = build_rerank_config(rerank_config_param, k=3)
+    rerank_config = build_rerank_config(rerank_config_param, top_n=3)
 
     # Check if table is created
     vectorDB = HanaDB.from_texts(
@@ -549,15 +666,18 @@ def test_hanavector_similarity_search_with_score_with_euclidian_distance(table_n
     search_result = vectorDB.similarity_search_with_score(HanaTestConstants.TEXTS[0], 3, rerank_config=rerank_config)
 
     assert search_result[0][0].page_content == HanaTestConstants.TEXTS[0]
-    # With rerank, score is cross-encode (1.0 for same query); without rerank, euclidean distance (0.0)
+   
     if rerank_config_param:
-        assert search_result[0][1] == 1.0
-        assert search_result[1][1] <= search_result[0][1]
-        assert search_result[2][1] <= search_result[1][1]
+        prev_score = 1.0
+        for doc, score in search_result:
+            assert score <= prev_score  # Scores should be in descending order
+            prev_score = score
     else:
         assert search_result[0][1] == 0.0
-        assert search_result[1][1] >= search_result[0][1]
-        assert search_result[2][1] >= search_result[1][1]
+        prev_score = float("-inf")
+        for doc, score in search_result:
+            assert score >= prev_score  # Scores should be in ascending order
+            prev_score = score
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")

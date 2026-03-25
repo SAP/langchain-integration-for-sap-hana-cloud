@@ -9,6 +9,7 @@ from langchain_hana import HanaInternalEmbeddings
 from langchain_hana import HanaDB
 from tests.integration_tests.hana_test_constants import HanaTestConstants
 from tests.integration_tests.hana_test_utils import HanaTestUtils
+from typing import Any
 
 
 class Config:
@@ -60,22 +61,38 @@ def vectoroutputtype_param(request):  # type: ignore[no-untyped-def]
     return request.param
 
 
-@pytest.fixture(params=[None, {
-    "query": HanaTestConstants.TEXTS[0],
-    "model_id": os.environ["HANA_DB_RERANK_MODEL_ID"],
-}], ids=["no_rerank", "with_rerank"])
+@pytest.fixture(params=[
+    None, 
+    {"model_id": os.environ["HANA_DB_RERANK_MODEL_ID"]},
+    {"model_id": os.environ["HANA_DB_RERANK_MODEL_ID"], "rank_fields": ["start", "ready"]}
+
+], ids=["no_rerank", "with_rerank", "with_rerank_and_rank_fields"])
 def rerank_config_param(request):  # type: ignore[no-untyped-def]
-    """Parametrize rerank_config values for testing."""
+    """Parametrize rerank_config for similarity search tests."""
     return request.param
 
 
-def build_rerank_config(base_config, k):  # type: ignore[no-untyped-def]
-    """Build rerank_config with top_n set to k."""
+def build_rerank_config(base_config: dict[str, Any] | None, top_n: int, query: str | None = None) -> dict[str, Any] | None:
+    """Build full rerank_config by adding top_n to base config."""
     if base_config is None:
         return None
     result = base_config.copy()
-    result["top_n"] = k
+    result["top_n"] = top_n
+    if query is not None:
+        result["query"] = query
     return result
+
+
+pytest.fixture(params=[
+    ({"query": 5}, "rerank_config must contain 'query' and it must be a non-empty string"),
+    ({"top_n": "not_an_int"}, "rerank_config 'top_n' must be a positive integer"),
+    ({"model_id": 5}, "rerank_config 'model_id' must be a non-empty string"),
+    ({"rank_fields": "not_a_list"}, "rerank_config 'rank_fields' must be a list of strings"),
+    ({"rank_fields": [1, 2, 3]}, "rerank_config 'rank_fields' must be a list of strings")
+], ids=["query_not_str", "top_n_not_int", "model_id_not_str", "rank_fields_not_list", "rank_fields_not_str"])
+def invalid_rerank_config_with_error_message(request):
+    return request.param
+
 
 @pytest.fixture(scope="module", params=[{
     "internal_embedding_model_id": os.environ["HANA_DB_EMBEDDING_MODEL_ID"],
@@ -162,7 +179,7 @@ def test_hanavector_similarity_search_with_metadata_filter(
     vectorDB.add_texts(
         texts=HanaTestConstants.TEXTS, metadatas=HanaTestConstants.METADATAS
     )
-    rerank_config = build_rerank_config(rerank_config_param, k=3)
+    rerank_config = build_rerank_config(rerank_config_param, top_n=3)
 
     search_result = vectorDB.similarity_search(
         HanaTestConstants.TEXTS[0], 3, filter={"start": 100}, rerank_config=rerank_config
@@ -187,9 +204,20 @@ def test_hanavector_similarity_search_with_metadata_filter(
     assert HanaTestConstants.METADATAS[1]["end"] == search_result[0].metadata["end"]
 
 
+def test_hanavector_similarity_search_with_metadata_filter_invalid_rerank_config(vectorDB, invalid_rerank_config_with_error_message) -> None:
+    invalid_rerank_config, expected_error_message = invalid_rerank_config_with_error_message
+
+    vectorDB.add_texts(
+        texts=HanaTestConstants.TEXTS, metadatas=HanaTestConstants.METADATAS
+    )
+
+    with pytest.raises(ValueError, match=expected_error_message):
+        vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 3, filter={"start": 100}, rerank_config=invalid_rerank_config)
+
+
 def test_hanavector_similarity_search_simple(vectorDB, rerank_config_param) -> None:
     vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
-    rerank_config = build_rerank_config(rerank_config_param, k=1)
+    rerank_config = build_rerank_config(rerank_config_param, top_n=1)
 
     assert (
         HanaTestConstants.TEXTS[0]
@@ -205,6 +233,15 @@ def test_hanavector_similarity_search_simple(vectorDB, rerank_config_param) -> N
 def test_hanavector_similarity_search_simple_invalid(vectorDB, k: int) -> None:
     with pytest.raises(ValueError, match="must be an integer greater than 0"):
         vectorDB.similarity_search(HanaTestConstants.TEXTS[0], k)
+
+
+def test_hanavector_similarity_search_simple_invalid_rerank_config(vectorDB, invalid_rerank_config_with_error_message) -> None:
+    invalid_rerank_config, expected_error_message = invalid_rerank_config_with_error_message
+
+    vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
+
+    with pytest.raises(ValueError, match=expected_error_message):
+        vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 1, rerank_config=invalid_rerank_config)
 
 
 def test_hanavector_max_marginal_relevance_search(vectorDB) -> None:
