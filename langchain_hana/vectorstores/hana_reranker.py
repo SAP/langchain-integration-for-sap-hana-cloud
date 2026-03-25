@@ -1,119 +1,106 @@
 # from __future__ import annotations
 
-# import logging
 import json
-from copy import deepcopy
-from typing import Any, Dict, List, Optional, Sequence, Union
+import logging
+import re
+from typing import Any, ClassVar, List, Optional, Pattern, Sequence
 
-from langchain_core.callbacks.base import Callbacks
-from langchain_core.documents import BaseDocumentCompressor, Document
-from langchain_core.utils import secret_from_env
 from hdbcli import dbapi
-from pydantic import AliasChoices, ConfigDict, Field, SecretStr, model_validator
+from langchain_core.documents import BaseDocumentCompressor, Document
+from pydantic import ConfigDict, Field, model_validator
 
-
-# logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class HanaReranker(BaseDocumentCompressor):
     """Document compressor that uses Internal SAP Models to Rerank."""
 
     connection: dbapi.Connection
-    # top_n: Optional[int] = 3
-    # """Number of documents to return."""
-    model: str = Field(
-        default="SAP_CER.20250701",
-        description="Model to use for reranking. Default is 'SAP_CER.20250701'.",
+
+    model_id: str = Field(
+        description="Model to use for reranking.",
     )
     """Model to use for reranking."""
-
-    rank_fields: Optional[List[str]] = None
-    """Fields to use for reranking when documents are dictionaries."""
-    # return_documents: bool = True
-    # """Whether to return the documents in the reranking results."""
 
     model_config = ConfigDict(
         extra="forbid",
         arbitrary_types_allowed=True,
     )
 
-    # @model_validator(mode="after")
-    # def validate_model_supported(self) -> Any:
-    #     """Validate that the provided model is supported by SAP HANA for reranking."""
-    #     supported = self.list_supported_models()
-    #     supported_names = [m["model"] for m in supported]
-    #     if self.model not in supported_names:
-    #         raise ValueError(
-    #             f"Model '{self.model}' is not a supported SAP HANA reranker model. Supported: {supported_names}"
-    #         )
-    #     return self
+    def _generate_cross_encode_sql_and_params(
+        self, text_column: str, query: str, rank_fields: list[str], rerank_model_id: str
+    ) -> tuple[str, list]:
+        if rank_fields:
+            cross_encode_input = f"'{text_column}:' || TO_NVARCHAR({text_column})"
+            for field in rank_fields:
+                cross_encode_input += f"|| '| {field}:' || TO_NVARCHAR(COALESCE(JSON_VALUE(METADATA, '$.{field}'), ''))"
+        else:
+            cross_encode_input = f"TO_NVARCHAR({text_column})"
 
-    # def list_supported_models(self, vector_type: Optional[str] = None) -> list:
-    #     """Return a list of supported embedding models from SAP HANA."""
-    #     api_key = self.pinecone_api_key.get_secret_value()
-    #     return get_pinecone_supported_models(
-    #         api_key, model_type="rerank", vector_type=vector_type
-    #     )
+        cross_encode_sql = f"CROSS_ENCODE({cross_encode_input}, ?, ?) OVER()"
 
-    # async def alist_supported_models(self, vector_type: Optional[str] = None) -> list:
-    #     """Return a list of supported reranker models from Pinecone asynchronously."""
-    #     api_key = self.pinecone_api_key.get_secret_value()
-    #     return await aget_pinecone_supported_models(
-    #         api_key, model_type="rerank", vector_type=vector_type
-    #     )
+        cross_encode_params = [query, rerank_model_id]
+        return cross_encode_sql, cross_encode_params
 
-    # def _document_to_dict(
-    #     self,
-    #     document: Union[str, Document, dict],
-    #     index: int,
-    # ) -> dict:
-    #     if isinstance(document, Document):
-    #         doc_id_from_meta = document.metadata.get("id")
-    #         if isinstance(doc_id_from_meta, str) and doc_id_from_meta:
-    #             doc_id = doc_id_from_meta
-    #         else:  # Generate ID if not valid
-    #             doc_id = f"doc_{index}"
+    @model_validator(mode="after")
+    def validate_model_supported(self) -> Any:
+        """Validate that the provided model is supported by SAP HANA for reranking."""
+        with self.connection.cursor() as cur:
+            try:
+                cur.execute(
+                    # CROSS_ENCODE IS A WINDOW FUNCTION
+                    # passing a single text through a "'test'""
+                    f"SELECT {self._generate_cross_encode_sql_and_params("'test'", 'test', [], self.model_id)[0]} FROM SYS.DUMMY",
+                    ["test", self.model_id],
+                )
+            except dbapi.Error as e:
+                logger.error(f"Database error while validating rerank model ID: {e}")
+                raise
+        return self
 
-    #         doc_data = {
-    #             "id": doc_id,
-    #             "text": document.page_content,
-    #             **document.metadata,
-    #         }
-    #         return doc_data
-    #     elif isinstance(document, dict):
-    #         current_id = document.get("id")
-    #         if not isinstance(current_id, str) or not current_id:
-    #             document["id"] = f"doc_{index}"  # Generate and set ID if not valid
-    #         return document
-    #     else:
-    #         return {"id": f"doc_{index}", "text": str(document)}
+    # Compile pattern only once, for better performance
+    _compiled_pattern: ClassVar[Pattern] = re.compile("^[_a-zA-Z][_a-zA-Z0-9]*$")
 
-    # def _rerank_params(self, model: str, truncate: str) -> dict:
-    #     """Returns the parameters for the rerank API call."""
-    #     parameters = {}
-    #     # Only include truncate parameter for models that support it
-    #     if model != "cohere-rerank-3.5":
-    #         parameters["truncate"] = truncate
-    #     return parameters
-    
+    @staticmethod
+    def _sanitize_metadata_keys(metadata: dict) -> dict:
+        for key in metadata.keys():
+            if not HanaReranker._compiled_pattern.match(key):
+                raise ValueError(f"Invalid metadata key {key}")
+
+        return metadata
+
+    @staticmethod
+    def _sanitize_rank_fields(rank_fields: list[str]) -> list[str]:
+        for field in rank_fields:
+            if not HanaReranker._compiled_pattern.match(field):
+                raise ValueError(f"Invalid rank field {field}")
+        return rank_fields
+
     def rerank(
         self,
-        documents : Sequence[Document],
+        documents: Sequence[Document],
         query: str,
-        *,
         top_n: int = 3,
+        return_documents: bool = True,
+        rank_fields: list[str] = [],
     ) -> list[tuple[int, Document, float]]:
         """Reranks documents based on relevance to the query using SAP HANA's CROSS_ENCODE function.
         Args:
             documents: A sequence of Document objects to be reranked.
             query: The query string to compare the documents against.
             top_n: Optional number of top results to return. If not provided, uses the default top_n.
+            return_documents: Whether to return the documents in the reranking results.
+            rank_fields: additional list of metadata fields to include in the reranking along with the page_content. Defaults to empty.
         Returns:
             A list of tuples containing the index, document, and score, ordered by relevance.
         """
 
         if top_n <= 0 or top_n > len(documents):
-            raise ValueError("top_n must be greater than 0 and less than or equal to the number of documents")
+            raise ValueError(
+                "top_n must be greater than 0 and less than or equal to the number of documents"
+            )
+
+        HanaReranker._sanitize_rank_fields(rank_fields)  # Validate rank_fields
 
         document_idx_with_scores = []
 
@@ -130,14 +117,34 @@ class HanaReranker(BaseDocumentCompressor):
                 cur.execute(create_temp_table_sql)
             except Exception as e:
                 raise RuntimeError(f"Error creating temporary table for reranking: {e}")
-            
+
             try:
                 insert_sql = f"INSERT INTO {temp_table_name} (ID, TEXT, METADATA) VALUES (?, ?, ?)"
                 try:
-                    cur.executemany(insert_sql, [(doc.id, doc.page_content, json.dumps(doc.metadata)) for doc in documents]) 
+                    cur.executemany(
+                        insert_sql,
+                        [
+                            (
+                                doc.id,
+                                doc.page_content,
+                                json.dumps(
+                                    HanaReranker._sanitize_metadata_keys(doc.metadata)
+                                ),
+                            )
+                            for doc in documents
+                        ],
+                    )
                 except Exception as e:
-                    raise RuntimeError(f"Error inserting documents into temporary table for reranking: {e}")
-            
+                    raise RuntimeError(
+                        f"Error inserting documents into temporary table for reranking: {e}"
+                    )
+
+                cross_encode_sql, cross_encode_params = (
+                    self._generate_cross_encode_sql_and_params(
+                        "TEXT", query, rank_fields, self.model_id
+                    )
+                )
+
                 reranking_sql = f"""
                 SELECT
                     TOP {top_n}
@@ -145,136 +152,31 @@ class HanaReranker(BaseDocumentCompressor):
                     ID,
                     TEXT,
                     METADATA,
-                    CROSS_ENCODE(TO_NVARCHAR(TEXT), ?, ?) OVER() AS SCORE
+                    {cross_encode_sql} AS SCORE
                 FROM {temp_table_name}
                 ORDER BY SCORE DESC
                 """
                 try:
-                    cur.execute(reranking_sql, [query, self.model])
+                    cur.execute(reranking_sql, cross_encode_params)
                     rows = cur.fetchall()
                     for row in rows:
                         idx, doc_id, text, metadata_json, score = row
-                        metadata = json.loads(metadata_json)
-                        document = Document(id=doc_id, page_content=text, metadata=metadata)
-                        document_idx_with_scores.append((idx, document, score))
+                        if return_documents:
+                            metadata = json.loads(metadata_json)
+                            document = Document(
+                                id=doc_id, page_content=text, metadata=metadata
+                            )
+                            document_idx_with_scores.append((idx, score, document))
+                        else:
+                            document_idx_with_scores.append((idx, score))
                 except Exception as e:
                     raise RuntimeError(f"Error executing reranking query: {e}")
             finally:
-                cur.execute(f"DROP TABLE {temp_table_name}")  # Ensure temp table is dropped
-        
+                cur.execute(
+                    f"DROP TABLE {temp_table_name}"
+                )  # Ensure temp table is dropped
+
         return document_idx_with_scores
-
-    # def rerank(
-    #     self,
-    #     documents: Sequence[Union[str, Document, dict]],
-    #     query: str,
-    #     *,
-    #     rank_fields: Optional[List[str]] = None,
-    #     model: Optional[str] = None,
-    #     top_n: Optional[int] = None,
-    #     truncate: str = "END",
-    # ) -> List[Dict[str, Any]]:
-    #     """Returns an ordered list of documents ordered by their relevance to the provided query."""
-    #     if len(documents) == 0:  # to avoid empty API call
-    #         return []
-
-    #     # Convert documents to dict format
-    #     docs = [
-    #         self._document_to_dict(document=doc, index=i)
-    #         for i, doc in enumerate(documents)
-    #     ]
-
-    #     try:
-    #         client = self._get_sync_client()
-
-    #         # Use self.model if model is None
-    #         model_to_use = model if model is not None else self.model
-    #         if model_to_use is None:  # This should never happen due to validator
-    #             raise ValueError("No model specified for reranking")
-
-    #         rerank_result = client.inference.rerank(
-    #             model=model_to_use,
-    #             query=query,
-    #             documents=docs,
-    #             rank_fields=rank_fields or self.rank_fields or ["text"],
-    #             top_n=top_n or self.top_n,
-    #             return_documents=self.return_documents,
-    #             parameters=self._rerank_params(model=model_to_use, truncate=truncate),
-    #         )
-
-    #         result_dicts = []
-    #         for result_item_data in rerank_result.data:
-    #             result_dict = {
-    #                 "id": result_item_data.document.id,
-    #                 "index": result_item_data.index,
-    #                 "score": result_item_data.score,
-    #             }
-
-    #             if self.return_documents:
-    #                 result_dict["document"] = result_item_data.document.to_dict()
-
-    #             result_dicts.append(result_dict)
-
-    #         return result_dicts
-
-    #     except Exception as e:
-    #         logger.error(f"Rerank error: {e}")
-    #         return []
-
-    # async def arerank(
-    #     self,
-    #     documents: Sequence[Union[str, Document, dict]],
-    #     query: str,
-    #     *,
-    #     rank_fields: Optional[List[str]] = None,
-    #     model: Optional[str] = None,
-    #     top_n: Optional[int] = None,
-    #     truncate: str = "END",
-    # ) -> List[Dict[str, Any]]:
-    #     """Async rerank documents using Pinecone's reranking API."""
-    #     if len(documents) == 0:  # to avoid empty API call
-    #         return []
-
-    #     docs = [
-    #         self._document_to_dict(document=doc, index=i)
-    #         for i, doc in enumerate(documents)
-    #     ]
-
-    #     try:
-    #         client = await self._get_async_client()
-
-    #         # Use self.model if model is None
-    #         model_to_use = model if model is not None else self.model
-    #         if model_to_use is None:  # This should never happen due to validator
-    #             raise ValueError("No model specified for reranking")
-
-    #         rerank_result = await client.inference.rerank(
-    #             model=model_to_use,
-    #             query=query,
-    #             documents=docs,
-    #             rank_fields=rank_fields or self.rank_fields or ["text"],
-    #             top_n=top_n or self.top_n,
-    #             return_documents=self.return_documents,
-    #             parameters=self._rerank_params(model=model_to_use, truncate=truncate),
-    #         )
-
-    #         result_dicts = []
-    #         for result_item_data in rerank_result.data:
-    #             result_dict = {
-    #                 "id": result_item_data.document.id,
-    #                 "index": result_item_data.index,
-    #                 "score": result_item_data.score,
-    #             }
-
-    #             if self.return_documents:
-    #                 result_dict["document"] = result_item_data.document.to_dict()
-
-    #             result_dicts.append(result_dict)
-
-    #         return result_dicts
-    #     except Exception as e:
-    #         logger.error(f"Async rerank error: {e}")
-    #         return []
 
     def compress_documents(
         self,
@@ -293,70 +195,10 @@ class HanaReranker(BaseDocumentCompressor):
 
         compressed = []
 
-        reranked_results = self.rerank(documents=documents, query=query, top_n = 5)
+        reranked_results = self.rerank(documents=documents, query=query, top_n=5)
 
-        for idx, doc, score in reranked_results:
-            doc_copy = Document(doc.page_content, metadata=deepcopy(doc.metadata), id=doc.id)
-            doc_copy.metadata["relevance_score"] = score
-            compressed.append(doc_copy)
+        for idx, score, doc in reranked_results:
+            doc.metadata["relevance_score"] = score
+            compressed.append(doc)
 
         return compressed
-    
-
-    # def compress_documents(
-    #     self,
-    #     documents: Sequence[Document],
-    #     query: str,
-    #     callbacks: Optional[Callbacks] = None,
-    # ) -> Sequence[Document]:
-    #     """Compress documents using Pinecone's rerank API."""
-    #     if not documents:
-    #         return []
-
-    #     compressed = []
-    #     reranked_results = self.rerank(documents=documents, query=query)
-
-    #     if not reranked_results:
-    #         return []
-
-    #     for res in reranked_results:
-    #         if res["index"] is not None:
-    #             doc_index = res["index"]
-    #             if 0 <= doc_index < len(documents):
-    #                 doc = documents[doc_index]
-    #                 doc_copy = Document(
-    #                     doc.page_content, metadata=deepcopy(doc.metadata)
-    #                 )
-    #                 doc_copy.metadata["relevance_score"] = res["score"]
-    #                 compressed.append(doc_copy)
-
-    #     return compressed
-
-    # async def acompress_documents(
-    #     self,
-    #     documents: Sequence[Document],
-    #     query: str,
-    #     callbacks: Optional[Callbacks] = None,
-    # ) -> Sequence[Document]:
-    #     """Async compress documents using Pinecone's rerank API."""
-    #     if not documents:
-    #         return []
-
-    #     compressed = []
-    #     reranked_results = await self.arerank(documents=documents, query=query)
-
-    #     if not reranked_results:
-    #         return []
-
-    #     for res in reranked_results:
-    #         if res["index"] is not None:
-    #             doc_index = res["index"]
-    #             if 0 <= doc_index < len(documents):
-    #                 doc = documents[doc_index]
-    #                 doc_copy = Document(
-    #                     doc.page_content, metadata=deepcopy(doc.metadata)
-    #                 )
-    #                 doc_copy.metadata["relevance_score"] = res["score"]
-    #                 compressed.append(doc_copy)
-
-    #     return compressed
