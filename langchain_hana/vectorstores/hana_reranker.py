@@ -189,13 +189,13 @@ class HanaReranker(BaseDocumentCompressor):
             query: The query string to compare the documents against for relevance.
         Returns:
             A list of Document objects reranked according to relevance to the query.
-            Only the top 5 documents are returned.
+            Only the top 5 documents are returned, or fewer if there are less than 5 documents.
             The scores are added to the metadata of each Document under the key "relevance_score".
         """
 
         compressed = []
 
-        reranked_results = self.rerank(documents=documents, query=query, top_n=5)
+        reranked_results = self.rerank(documents=documents, query=query, top_n=min(5, len(documents)))
 
         for idx, score, doc in reranked_results:
             doc.metadata["relevance_score"] = score
