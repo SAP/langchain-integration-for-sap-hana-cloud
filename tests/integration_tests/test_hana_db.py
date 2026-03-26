@@ -374,9 +374,12 @@ def test_hanavector_similarity_search_by_vector_simple_invalid(
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_by_vector_simple_invalid_rerank_config(vectorDB, invalid_rerank_config_with_error_message) -> None:
     invalid_rerank_config, expected_error_message = invalid_rerank_config_with_error_message
+    invalid_rerank_config_copy = invalid_rerank_config.copy()
+    if(not "query" in invalid_rerank_config):
+        invalid_rerank_config_copy["query"] = HanaTestConstants.TEXTS[0]
     vector = embedding.embed_query(HanaTestConstants.TEXTS[0])
     with pytest.raises(ValueError, match=expected_error_message):
-        vectorDB.similarity_search_by_vector(vector, 1, rerank_config=invalid_rerank_config)
+        vectorDB.similarity_search_by_vector(vector, 1, rerank_config=invalid_rerank_config_copy)
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")

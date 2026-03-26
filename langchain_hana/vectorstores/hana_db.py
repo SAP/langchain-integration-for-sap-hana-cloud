@@ -777,11 +777,15 @@ class HanaDB(VectorStore):
         Returns:
             List of Documents most similar to the query
         """
-        if rerank_config and not rerank_config.get("query"):
-            rerank_config["query"] = query  # Use the original query if no specific rerank query is provided
+        if rerank_config:
+            rerank_config_copy = {**rerank_config}
+            if not rerank_config.get("query"):
+                rerank_config_copy["query"] = query  # Use the original query if no specific rerank query is provided
+        else:
+            rerank_config_copy = None
 
         docs_and_scores = self.similarity_search_with_score(
-            query=query, k=k, filter=filter, rerank_config=rerank_config
+            query=query, k=k, filter=filter, rerank_config=rerank_config_copy
         )
         return [doc for doc, _ in docs_and_scores]
 
@@ -807,19 +811,23 @@ class HanaDB(VectorStore):
             most similar to the query
         """
 
-        if rerank_config and not rerank_config.get("query"):
-            rerank_config["query"] = query  # Use the original query if no specific rerank query is provided
+        if rerank_config:
+            rerank_config_copy = {**rerank_config}
+            if not rerank_config.get("query"):
+                rerank_config_copy["query"] = query  # Use the original query if no specific rerank query is provided
+        else:
+            rerank_config_copy = None
 
         if self.use_internal_embeddings:
             # Internal embeddings: pass the query directly
             whole_result = self.similarity_search_with_score_and_vector_by_query(
-                query=query, k=k, filter=filter, rerank_config=rerank_config
+                query=query, k=k, filter=filter, rerank_config=rerank_config_copy
             )
         else:
             # External embeddings: generate embedding from the query
             embedding = self.embedding.embed_query(query)
             whole_result = self.similarity_search_with_score_and_vector_by_vector(
-                embedding=embedding, k=k, filter=filter, rerank_config=rerank_config
+                embedding=embedding, k=k, filter=filter, rerank_config=rerank_config_copy
             )
 
         return [(result_item[0], result_item[1]) for result_item in whole_result]
@@ -892,8 +900,12 @@ class HanaDB(VectorStore):
                 "similarity_search_with_score_and_vector_by_query"
             )
         
-        if rerank_config and not rerank_config.get("query"):
-            rerank_config["query"] = query  # Use the original query if no specific rerank query is provided
+        if rerank_config:
+            rerank_config_copy = {**rerank_config}
+            if not rerank_config.get("query"):
+                rerank_config_copy["query"] = query  # Use the original query if no specific rerank query is provided
+        else:
+            rerank_config_copy = None
 
         vector_embedding_sql, vector_embedding_params = self._generate_vector_embedding_sql_and_params(query, 'QUERY')
         # Wrap VECTOR_EMBEDDING with vector type conversion if needed
@@ -906,7 +918,7 @@ class HanaDB(VectorStore):
             vector_embedding_params=vector_embedding_params,
             k=k,
             filter=filter,
-            rerank_config=rerank_config
+            rerank_config=rerank_config_copy
         )
 
     def _similarity_search_with_score_and_vector(
@@ -982,8 +994,8 @@ class HanaDB(VectorStore):
 
         if rerank_config:
             HanaDB._validate_rerank_config(rerank_config)
-            rerank_top_n = rerank_config.setdefault("top_n", 3)  # Default top_n to 3
-            rerank_rank_fields = rerank_config.setdefault("rank_fields", [])  # Default rank_fields to empty list
+            rerank_top_n = rerank_config.get("top_n", 3)  # Default top_n to 3
+            rerank_rank_fields = rerank_config.get("rank_fields", [])  # Default rank_fields to empty list
             rerank_model_id = rerank_config["model_id"]
 
             self._validate_rerank_model_id(rerank_model_id)
