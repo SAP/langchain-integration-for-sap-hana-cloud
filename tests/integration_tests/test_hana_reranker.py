@@ -1,6 +1,6 @@
 import os
 from hdbcli import dbapi
-from langchain_classic.schema import Document
+from langchain_core.documents import Document
 import pytest
 from langchain_hana import HanaReranker
 from tests.integration_tests.hana_test_constants import HanaTestConstants

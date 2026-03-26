@@ -1,16 +1,13 @@
-# from __future__ import annotations
-
 import json
 import logging
 import re
-from typing import Any, ClassVar, List, Optional, Pattern, Sequence
+from typing import Any, ClassVar, Pattern, Sequence
 
 from hdbcli import dbapi
 from langchain_core.documents import BaseDocumentCompressor, Document
 from pydantic import ConfigDict, Field, model_validator
 
 logger = logging.getLogger(__name__)
-
 
 class HanaReranker(BaseDocumentCompressor):
     """Document compressor that uses Internal SAP Models to Rerank."""

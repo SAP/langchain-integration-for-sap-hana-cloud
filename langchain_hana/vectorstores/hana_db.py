@@ -1126,7 +1126,6 @@ class HanaDB(VectorStore):
                 - top_n (int): The number of top results to consider for reranking. Optional, defaults to 3.
                 - rank_fields: list of fields to use for reranking. Optional, defaults to an empty list, which means only the content column will be used.
                 - model_id (str): The model ID to use for reranking.
-                - remote_source (str): The remote source to use for reranking. Optional, defaults to an empty string.
 
         Returns:
             List of Documents most similar to the query vector.
