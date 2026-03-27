@@ -563,7 +563,7 @@ class HanaDB(VectorStore):
         if self.use_internal_embeddings:
             if use_map_merge:
                 return self._add_texts_with_map_merge_using_internal_embedding(
-                    texts, metadatas, embeddings
+                    texts, metadatas
                 )
             return self._add_texts_using_internal_embedding(
                 texts, metadatas, embeddings
@@ -674,7 +674,6 @@ class HanaDB(VectorStore):
         self,
         texts: Iterable[str],
         metadatas: Optional[list[dict]] = None,
-        embeddings: Optional[list[list[float]]] = None,
         **kwargs: Any,
     ) -> list[str]:
         """Add texts with map merge insertion using internal embedding function"""
@@ -692,20 +691,16 @@ class HanaDB(VectorStore):
         '''
 
         try:
-            try:
-                cur.execute(create_temp_table_sql)
-            except Exception as e:
-                raise Exception(f"Error while creating temporary table for map merge :{e}")
-            
+            cur.execute(create_temp_table_sql)
+        except Exception as e:
+            raise Exception(f"Error while creating temporary table for map merge :{e}")
+
+        try:
             insert_temp_table_sql = f'''
             INSERT INTO {temp_table_name} (ID, "VEC_TEXT", "VEC_VECTOR")
             VALUES (?,?,NULL)
             '''
-
-            try:
-                cur.executemany(insert_temp_table_sql, [(i, text) for i,text in enumerate(texts)])
-            except Exception as e:
-                raise Exception(f"Error while inserting rows into temporary table for map merge :{e}")
+            cur.executemany(insert_temp_table_sql, [(i, text) for i,text in enumerate(texts)])
             
             if self.internal_embedding_remote_source:
                 vector_embedding_sql = f"""VECTOR_EMBEDDING(:i_text, 'DOCUMENT', '{self.internal_embedding_model_id}', "{self.internal_embedding_remote_source}")"""
@@ -733,10 +728,7 @@ class HanaDB(VectorStore):
             """
             
             try:
-                try:
-                    cur.execute(create_map_merge_function_sql)
-                except Exception as e:
-                    raise Exception(f"Error while creating map merge function :{e}")
+                cur.execute(create_map_merge_function_sql)
                 
                 call_map_merge_sql = f"""
                     DO()
@@ -751,30 +743,18 @@ class HanaDB(VectorStore):
                     END;
                 """
 
-                try:
-                    cur.execute(call_map_merge_sql)
-                except Exception as e:
-                    raise Exception(f"Error while calling map merge function: {e}")
+                cur.execute(call_map_merge_sql)
 
                 fetch_embeddings_sql = f"""
                 SELECT VEC_VECTOR FROM {temp_table_name}
                 """
-                try:
-                    cur.execute(fetch_embeddings_sql)
-                    rows = cur.fetchall()
-                    embeddings = [row[0] for row in rows]
-                except Exception as e:
-                    raise Exception(f"Error while fetching embeddings: {e}")     
+                cur.execute(fetch_embeddings_sql)
+                rows = cur.fetchall()
+                embeddings = [row[0] for row in rows]
             finally:
-                try:
-                    cur.execute(f"DROP FUNCTION {temp_func_name}")
-                except Exception as e:
-                    raise Exception(f"Error while dropping map merge function: {e}")
+                cur.execute(f"DROP FUNCTION {temp_func_name}")
         finally:
-            try:
-                cur.execute(f"DROP TABLE {temp_table_name}")
-            except Exception as e:
-                raise Exception(f"Error while dropping temp table: {e}")
+            cur.execute(f"DROP TABLE {temp_table_name}")
 
         sql_params = []
         for i, text in enumerate(texts):
@@ -804,7 +784,6 @@ class HanaDB(VectorStore):
         )
 
         # Insert data into the table
-        cur = self.connection.cursor()
         try:
             cur.executemany(sql_str, sql_params)
         finally:
