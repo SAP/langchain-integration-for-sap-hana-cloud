@@ -6,6 +6,7 @@ from typing import Any, ClassVar, Pattern, Sequence
 from hdbcli import dbapi
 from langchain_core.documents import BaseDocumentCompressor, Document
 from pydantic import ConfigDict, Field, model_validator
+from langchain_hana.utils import _generate_cross_encode_sql_and_params
 
 logger = logging.getLogger(__name__)
 
@@ -24,21 +25,6 @@ class HanaReranker(BaseDocumentCompressor):
         arbitrary_types_allowed=True,
     )
 
-    def _generate_cross_encode_sql_and_params(
-        self, text_column: str, query: str, rank_fields: list[str], rerank_model_id: str
-    ) -> tuple[str, list]:
-        if rank_fields:
-            cross_encode_input = f"'{text_column}:' || TO_NVARCHAR({text_column})"
-            for field in rank_fields:
-                cross_encode_input += f"|| '| {field}:' || TO_NVARCHAR(COALESCE(JSON_VALUE(METADATA, '$.{field}'), ''))"
-        else:
-            cross_encode_input = f"TO_NVARCHAR({text_column})"
-
-        cross_encode_sql = f"CROSS_ENCODE({cross_encode_input}, ?, ?) OVER()"
-
-        cross_encode_params = [query, rerank_model_id]
-        return cross_encode_sql, cross_encode_params
-
     @model_validator(mode="after")
     def validate_model_supported(self) -> Any:
         """Validate that the provided model is supported by SAP HANA for reranking."""
@@ -47,7 +33,7 @@ class HanaReranker(BaseDocumentCompressor):
                 cur.execute(
                     # CROSS_ENCODE IS A WINDOW FUNCTION
                     # passing a single text through a "'test'""
-                    f"SELECT {self._generate_cross_encode_sql_and_params("'test'", 'test', [], self.model_id)[0]} FROM SYS.DUMMY",
+                    f"SELECT {_generate_cross_encode_sql_and_params("'test'", '', 'test', [], self.model_id)[0]} FROM SYS.DUMMY",
                     ["test", self.model_id],
                 )
             except dbapi.Error as e:
@@ -117,8 +103,7 @@ class HanaReranker(BaseDocumentCompressor):
 
             try:
                 insert_sql = f"INSERT INTO {temp_table_name} (ID, TEXT, METADATA) VALUES (?, ?, ?)"
-                try:
-                    cur.executemany(
+                cur.executemany(
                         insert_sql,
                         [
                             (
@@ -131,14 +116,10 @@ class HanaReranker(BaseDocumentCompressor):
                             for doc in documents
                         ],
                     )
-                except Exception as e:
-                    raise RuntimeError(
-                        f"Error inserting documents into temporary table for reranking: {e}"
-                    )
 
                 cross_encode_sql, cross_encode_params = (
-                    self._generate_cross_encode_sql_and_params(
-                        "TEXT", query, rank_fields, self.model_id
+                    _generate_cross_encode_sql_and_params(
+                        "TEXT", "METADATA", query, rank_fields, self.model_id
                     )
                 )
 
@@ -153,21 +134,18 @@ class HanaReranker(BaseDocumentCompressor):
                 FROM {temp_table_name}
                 ORDER BY SCORE DESC
                 """
-                try:
-                    cur.execute(reranking_sql, cross_encode_params)
-                    rows = cur.fetchall()
-                    for row in rows:
-                        idx, doc_id, text, metadata_json, score = row
-                        if return_documents:
-                            metadata = json.loads(metadata_json)
-                            document = Document(
-                                id=doc_id, page_content=text, metadata=metadata
-                            )
-                            document_idx_with_scores.append((idx, score, document))
-                        else:
-                            document_idx_with_scores.append((idx, score))
-                except Exception as e:
-                    raise RuntimeError(f"Error executing reranking query: {e}")
+                cur.execute(reranking_sql, cross_encode_params)
+                rows = cur.fetchall()
+                for row in rows:
+                    idx, doc_id, text, metadata_json, score = row
+                    if return_documents:
+                        metadata = json.loads(metadata_json)
+                        document = Document(
+                            id=doc_id, page_content=text, metadata=metadata
+                        )
+                        document_idx_with_scores.append((idx, score, document))
+                    else:
+                        document_idx_with_scores.append((idx, score))
             finally:
                 cur.execute(
                     f"DROP TABLE {temp_table_name}"

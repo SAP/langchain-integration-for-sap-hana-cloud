@@ -27,7 +27,7 @@ from langchain_hana.embeddings import HanaInternalEmbeddings
 from langchain_hana.vectorstores.create_where_clause import (
     CreateWhereClause,
 )
-from langchain_hana.utils import DistanceStrategy, _validate_k, _validate_k_and_fetch_k
+from langchain_hana.utils import DistanceStrategy, _validate_k, _validate_k_and_fetch_k, _generate_cross_encode_sql_and_params
 
 logger = logging.getLogger(__name__)
 
@@ -715,19 +715,6 @@ class HanaDB(VectorStore):
         instance.add_texts(texts, metadatas)
         return instance
     
-    def _generate_cross_encode_sql_and_params(self, text_column: str, query: str, rank_fields: list[str], rerank_model_id: str) -> tuple[str, list]:
-        if rank_fields:
-            cross_encode_input = f"'{text_column}:' || TO_NVARCHAR({text_column})"
-            for field in rank_fields:
-                cross_encode_input += f"|| '| {field}:' || TO_NVARCHAR(COALESCE(JSON_VALUE({self.metadata_column}, '$.{field}'), ''))"
-        else:
-            cross_encode_input = f"TO_NVARCHAR({text_column})"
-
-        cross_encode_sql = f"CROSS_ENCODE({cross_encode_input}, ?, ?) OVER()"
-        
-        cross_encode_params = [query, rerank_model_id]
-        return cross_encode_sql, cross_encode_params
-    
     @staticmethod
     def _validate_rerank_config(rerank_config: dict) -> None:
         if not isinstance(rerank_config, dict):
@@ -751,7 +738,7 @@ class HanaDB(VectorStore):
                 cur.execute(
                     # CROSS_ENCODE IS A WINDOW FUNCTION
                     # passing a single text through a "'test'""
-                    f"SELECT {self._generate_cross_encode_sql_and_params("'test'", 'test', [], rerank_model_id)[0]} FROM SYS.DUMMY", ['test', rerank_model_id]
+                    f"SELECT {_generate_cross_encode_sql_and_params("'test'", '', 'test', [], rerank_model_id)[0]} FROM SYS.DUMMY", ['test', rerank_model_id]
                 )
             except dbapi.Error as e:
                 logger.error(f"Database error while validating rerank model ID: {e}")
@@ -1005,8 +992,9 @@ class HanaDB(VectorStore):
             if rerank_top_n > k:
                 raise ValueError("rerank_config 'top_n' cannot be greater than k")
             
-            cross_encoding_sql, cross_encoding_params = self._generate_cross_encode_sql_and_params(
+            cross_encoding_sql, cross_encoding_params = _generate_cross_encode_sql_and_params(
                 text_column=self.content_column,
+                metadata_column=self.metadata_column,
                 query=rerank_query,
                 rank_fields=rerank_rank_fields,
                 rerank_model_id=rerank_model_id,
