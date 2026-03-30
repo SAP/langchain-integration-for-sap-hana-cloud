@@ -1,12 +1,14 @@
 import json
 import logging
-import re
-from typing import Any, ClassVar, Pattern, Sequence
+from typing import Any, Sequence
 
 from hdbcli import dbapi
 from langchain_core.documents import BaseDocumentCompressor, Document
 from pydantic import ConfigDict, Field, model_validator
-from langchain_hana.utils import _generate_cross_encode_sql_and_params
+from langchain_hana.vectorstores.utils import (
+    _generate_cross_encode_sql_and_params,
+    _sanitize_metadata_keys
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,24 +43,6 @@ class HanaReranker(BaseDocumentCompressor):
                 raise
         return self
 
-    # Compile pattern only once, for better performance
-    _compiled_pattern: ClassVar[Pattern] = re.compile("^[_a-zA-Z][_a-zA-Z0-9]*$")
-
-    @staticmethod
-    def _sanitize_metadata_keys(metadata: dict) -> dict:
-        for key in metadata.keys():
-            if not HanaReranker._compiled_pattern.match(key):
-                raise ValueError(f"Invalid metadata key {key}")
-
-        return metadata
-
-    @staticmethod
-    def _sanitize_rank_fields(rank_fields: list[str]) -> list[str]:
-        for field in rank_fields:
-            if not HanaReranker._compiled_pattern.match(field):
-                raise ValueError(f"Invalid rank field {field}")
-        return rank_fields
-
     def rerank(
         self,
         documents: Sequence[Document],
@@ -83,7 +67,7 @@ class HanaReranker(BaseDocumentCompressor):
                 "top_n must be greater than 0 and less than or equal to the number of documents"
             )
 
-        HanaReranker._sanitize_rank_fields(rank_fields)  # Validate rank_fields
+        _sanitize_metadata_keys(rank_fields)  # Validate rank_fields
 
         document_idx_with_scores = []
 
@@ -91,7 +75,7 @@ class HanaReranker(BaseDocumentCompressor):
             temp_table_name = "#RERANK_DOCS"
             create_temp_table_sql = f"""
             CREATE LOCAL TEMPORARY TABLE {temp_table_name} (
-                ID INT,
+                ID NVARCHAR(5000),
                 TEXT NCLOB,
                 METADATA NCLOB
             );
@@ -103,19 +87,17 @@ class HanaReranker(BaseDocumentCompressor):
 
             try:
                 insert_sql = f"INSERT INTO {temp_table_name} (ID, TEXT, METADATA) VALUES (?, ?, ?)"
-                cur.executemany(
-                        insert_sql,
-                        [
-                            (
-                                doc.id,
-                                doc.page_content,
-                                json.dumps(
-                                    HanaReranker._sanitize_metadata_keys(doc.metadata)
-                                ),
-                            )
-                            for doc in documents
-                        ],
+                insert_sql_params = []
+                for doc in documents:
+                    _sanitize_metadata_keys(list(doc.metadata.keys()))
+                    insert_sql_params.append(
+                        (
+                            doc.id,
+                            doc.page_content,
+                            json.dumps(doc.metadata),
+                        )
                     )
+                cur.executemany(insert_sql, insert_sql_params)
 
                 cross_encode_sql, cross_encode_params = (
                     _generate_cross_encode_sql_and_params(

@@ -27,7 +27,11 @@ from langchain_hana.embeddings import HanaInternalEmbeddings
 from langchain_hana.vectorstores.create_where_clause import (
     CreateWhereClause,
 )
-from langchain_hana.utils import DistanceStrategy, _validate_k, _validate_k_and_fetch_k, _generate_cross_encode_sql_and_params
+from langchain_hana.utils import DistanceStrategy, _validate_k, _validate_k_and_fetch_k
+from langchain_hana.vectorstores.utils import (
+    _generate_cross_encode_sql_and_params,
+    _sanitize_metadata_keys,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -270,23 +274,6 @@ class HanaDB(VectorStore):
             if not isinstance(value, float):
                 raise ValueError(f"Value ({value}) does not have type float")
         return embedding
-
-    # Compile pattern only once, for better performance
-    _compiled_pattern: Pattern = re.compile("^[_a-zA-Z][_a-zA-Z0-9]*$")
-
-    @staticmethod
-    def _sanitize_metadata_keys(metadata: dict) -> dict:
-        for key in metadata.keys():
-            if not HanaDB._compiled_pattern.match(key):
-                raise ValueError(f"Invalid metadata key {key}")
-
-        return metadata
-    
-    @staticmethod
-    def _sanitize_rank_fields(rank_fields: list[str]) -> list[str]:
-        for field in rank_fields:
-            if not HanaDB._compiled_pattern.match(field):
-                raise ValueError(f"Invalid rank field {field}")
 
     @staticmethod
     def _sanitize_specific_metadata_columns(
@@ -589,10 +576,11 @@ class HanaDB(VectorStore):
             metadata, extracted_special_metadata = self._split_off_special_metadata(
                 metadata
             )
+            _sanitize_metadata_keys(list(metadata.keys()))
             sql_params.append(
                 (
                     text,
-                    json.dumps(HanaDB._sanitize_metadata_keys(metadata)),
+                    json.dumps(metadata),
                     self._serialize_binary_format(embeddings[i]),
                     *extracted_special_metadata,
                 )
@@ -629,10 +617,9 @@ class HanaDB(VectorStore):
             metadata, extracted_special_metadata = self._split_off_special_metadata(
                 metadata
             )
+            _sanitize_metadata_keys(list(metadata.keys()))
             parameters = [text]
-            parameters.append(json.dumps(
-                    HanaDB._sanitize_metadata_keys(metadata)
-                ))  # Replace `metadata_value` with the actual value
+            parameters.append(json.dumps(metadata))  # Replace `metadata_value` with the actual value
             parameters.extend(self._generate_vector_embedding_sql_and_params(text, 'DOCUMENT')[1])
             # specific_metadata_values must align with the columns
             parameters.extend(extracted_special_metadata)
@@ -726,7 +713,7 @@ class HanaDB(VectorStore):
         if "rank_fields" in rerank_config:
             if not isinstance(rerank_config["rank_fields"], list) or not all(isinstance(field, str) for field in rerank_config["rank_fields"]):
                 raise ValueError("rerank_config 'rank_fields' must be a list of strings")
-            HanaDB._sanitize_rank_fields(rerank_config["rank_fields"])
+            _sanitize_metadata_keys(rerank_config["rank_fields"])
         if "model_id" not in rerank_config or not isinstance(rerank_config["model_id"], str) or not rerank_config["model_id"]:
             raise ValueError("rerank_config 'model_id' must be a non-empty string")
 
