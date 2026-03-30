@@ -724,7 +724,10 @@ class HanaDB(VectorStore):
             
             try:
                 cur.execute(create_map_merge_function_sql)
-                
+            except Exception as e:
+                raise Exception(f"Error while creating temporary function for map merge :{e}")
+
+            try:
                 call_map_merge_sql = f"""
                     DO()
                     BEGIN
@@ -737,7 +740,6 @@ class HanaDB(VectorStore):
                             UPDATE SET dat."VEC_VECTOR" = upd."PAL_EMBEDDING";
                     END;
                 """
-
                 cur.execute(call_map_merge_sql)
 
                 fetch_embeddings_sql = f"""
