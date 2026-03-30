@@ -100,6 +100,7 @@ class HanaDB(VectorStore):
         self.specific_metadata_columns = HanaDB._sanitize_specific_metadata_columns(
             specific_metadata_columns or []
         )
+        self._validated_reranking_model_ids = set()
 
         # Configure the embedding (internal or external)
         self.embedding: Embeddings
@@ -720,6 +721,8 @@ class HanaDB(VectorStore):
     def _validate_rerank_model_id(self, rerank_model_id: str) -> None:
         if not isinstance(rerank_model_id, str) or not rerank_model_id:
             raise ValueError("rerank_model_id must be a non-empty string")
+        if rerank_model_id in self._validated_reranking_model_ids:
+            return
         with self.connection.cursor() as cur:
             try:
                 cur.execute(
@@ -727,6 +730,7 @@ class HanaDB(VectorStore):
                     # passing a single text through a "'test'""
                     f"SELECT {_generate_cross_encode_sql_and_params("'test'", '', 'test', [], rerank_model_id)[0]} FROM SYS.DUMMY", ['test', rerank_model_id]
                 )
+                self._validated_reranking_model_ids.add(rerank_model_id)
             except dbapi.Error as e:
                 logger.error(f"Database error while validating rerank model ID: {e}")
                 raise
