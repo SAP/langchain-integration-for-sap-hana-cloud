@@ -748,7 +748,7 @@ class HanaDB(VectorStore):
             rerank_config: Optional dictionary for reranking configuration with the following keys.
                 Defaults to None, which means no reranking will be applied.
                 - query (str): The query to use for reranking. If not provided, the similarity search query will be used.
-                - top_n (int): The number of top results to consider for reranking. Optional, defaults to 3.
+                - top_n (int): The number of top results to consider for reranking. Optional, defaults to min(3, k).
                 - rank_fields: list of fields to use for reranking. Optional, defaults to an empty list, which means only the content column will be used.
                 - model_id (str): The model ID to use for reranking.
 
@@ -774,7 +774,7 @@ class HanaDB(VectorStore):
             rerank_config: Optional dictionary for reranking configuration with the following keys.
                 Defaults to None, which means no reranking will be applied.
                 - query (str): The query to use for reranking. If not provided, the similarity search query will be used.
-                - top_n (int): The number of top results to consider for reranking. Optional, defaults to 3.
+                - top_n (int): The number of top results to consider for reranking. Optional, defaults to min(3, k).
                 - rank_fields: list of fields to use for reranking. Optional, defaults to an empty list, which means only the content column will be used.
                 - model_id (str): The model ID to use for reranking.
 
@@ -789,10 +789,17 @@ class HanaDB(VectorStore):
                 query=query, k=k, filter=filter, rerank_config=rerank_config
             )
         else:
+            if rerank_config:
+                rerank_config_copy = {**rerank_config}
+                if not rerank_config.get("query"):
+                        rerank_config_copy["query"] = query  # Use the original query if no specific rerank query is provided
+            else:
+                rerank_config_copy = None
+
             # External embeddings: generate embedding from the query
             embedding = self.embedding.embed_query(query)
             whole_result = self.similarity_search_with_score_and_vector_by_vector(
-                embedding=embedding, k=k, filter=filter, rerank_config=rerank_config
+                embedding=embedding, k=k, filter=filter, rerank_config=rerank_config_copy
             )
 
         return [(result_item[0], result_item[1]) for result_item in whole_result]
@@ -810,7 +817,7 @@ class HanaDB(VectorStore):
             rerank_config: Optional dictionary for reranking configuration with the following keys.
                 Defaults to None, which means no reranking will be applied.
                 - query (str): The query to use for reranking. Required if reranking is desired.
-                - top_n (int): The number of top results to consider for reranking. Optional, defaults to 3.
+                - top_n (int): The number of top results to consider for reranking. Optional, defaults to min(3, k).
                 - rank_fields: list of fields to use for reranking. Optional, defaults to an empty list, which means only the content column will be used.
                 - model_id (str): The model ID to use for reranking.
 
@@ -847,7 +854,7 @@ class HanaDB(VectorStore):
             rerank_config: Optional dictionary for reranking configuration with the following keys.
                 Defaults to None, which means no reranking will be applied.
                 - query (str): The query to use for reranking. If not provided, the similarity search query will be used.
-                - top_n (int): The number of top results to consider for reranking. Optional, defaults to 3.
+                - top_n (int): The number of top results to consider for reranking. Optional, defaults to min(3, k).
                 - rank_fields: list of fields to use for reranking. Optional, defaults to an empty list, which means only the content column will be used.
                 - model_id (str): The model ID to use for reranking.
 
@@ -910,7 +917,7 @@ class HanaDB(VectorStore):
             rerank_config: Optional dictionary for reranking configuration with the following keys.
                 Defaults to None, which means no reranking will be applied.
                 - query (str): The query to use for reranking. Required if reranking is desired.
-                - top_n (int): The number of top results to consider for reranking. Optional, defaults to 3.
+                - top_n (int): The number of top results to consider for reranking. Optional, defaults to min(3, k).
                 - rank_fields: list of fields to use for reranking. Optional, defaults to an empty list, which means only the content column will be used.
                 - model_id (str): The model ID to use for reranking.
 
@@ -959,7 +966,7 @@ class HanaDB(VectorStore):
 
         if rerank_config:
             HanaDB._validate_rerank_config(rerank_config)
-            rerank_top_n = rerank_config.get("top_n", 3)  # Default top_n to 3
+            rerank_top_n = rerank_config.get("top_n", min(3, k))  # Default top_n to min(3, k) if not provided
             rerank_rank_fields = rerank_config.get("rank_fields", [])  # Default rank_fields to empty list
             rerank_model_id = rerank_config["model_id"]
 
@@ -1101,7 +1108,7 @@ class HanaDB(VectorStore):
             rerank_config: Optional dictionary for reranking configuration with the following keys.
                 Defaults to None, which means no reranking will be applied.
                 - query (str): The query to use for reranking. Required if reranking is desired.
-                - top_n (int): The number of top results to consider for reranking. Optional, defaults to 3.
+                - top_n (int): The number of top results to consider for reranking. Optional, defaults to min(3, k).
                 - rank_fields: list of fields to use for reranking. Optional, defaults to an empty list, which means only the content column will be used.
                 - model_id (str): The model ID to use for reranking.
 
