@@ -26,7 +26,7 @@ def teardown_module(module):  # type: ignore[no-untyped-def]
     config.conn = None
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def reranker():
     return HanaReranker(
         connection=config.conn,
