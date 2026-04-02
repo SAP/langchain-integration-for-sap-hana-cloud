@@ -8,7 +8,7 @@ from typing import Pattern
 _compiled_pattern: Pattern = re.compile("^[_a-zA-Z][_a-zA-Z0-9]*$")
 
 
-def _sanitize_metadata_keys(metadata_keys: list[str]) -> dict:
+def _sanitize_metadata_keys(metadata_keys: list[str]):
     """Validate that all metadata keys are valid identifiers."""
     for key in metadata_keys:
         if not _compiled_pattern.match(key):
