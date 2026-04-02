@@ -55,7 +55,7 @@ class HanaReranker(BaseDocumentCompressor):
         Args:
             documents: A sequence of Document objects to be reranked.
             query: The query string to compare the documents against.
-            top_n: Optional number of top results to return. If not provided, uses the default top_n.
+            top_n: Optional number of top results to return. If not provided, uses the default top_n = 3.
             return_documents: Whether to return the documents in the reranking results.
             rank_fields: additional list of metadata fields to include in the reranking along with the page_content. Defaults to empty.
         Returns:
