@@ -952,7 +952,7 @@ class HanaDB(VectorStore):
             f'  "{self.metadata_column}", '  # row[1]
             f'  "{self.vector_column}", '  # row[2]
             f'  {distance_func_name}("{self.vector_column}", '
-            f"  {embedding_expr}) AS CS "  # row[3]
+            f"  {embedding_expr}) AS SCORE "  # row[3]
             f"FROM {from_clause}"
         )
         parameters = []
@@ -962,7 +962,7 @@ class HanaDB(VectorStore):
         if where_clause:
             sql_str += f" {where_clause}"
             parameters += where_parameters
-        sql_str += f" order by CS {HANA_DISTANCE_FUNCTION[self.distance_strategy][1]}"
+        sql_str += f" order by SCORE {HANA_DISTANCE_FUNCTION[self.distance_strategy][1]}"
 
         if rerank_config:
             HanaDB._validate_rerank_config(rerank_config)
@@ -989,11 +989,11 @@ class HanaDB(VectorStore):
             {self.content_column},
             {self.metadata_column},
             {self.vector_column},
-            {cross_encoding_sql} AS RERANK_SCORE
+            {cross_encoding_sql} AS SCORE
             FROM (
                 {sql_str}
             )
-            ORDER BY RERANK_SCORE DESC
+            ORDER BY SCORE DESC
             """
             parameters = cross_encoding_params + parameters  # CROSS_ENCODE params come first in the SQL expression
 
