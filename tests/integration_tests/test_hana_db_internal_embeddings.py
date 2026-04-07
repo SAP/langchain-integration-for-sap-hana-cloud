@@ -215,6 +215,11 @@ def test_hanavector_similarity_search_with_metadata_filter_invalid_rerank_config
         vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 3, filter={"start": 100}, rerank_config=invalid_rerank_config)
 
 
+def test_hanavector_similarity_search_with_metadata_filter_invalid_rerank_model_id(vectorDB) -> None:
+    with pytest.raises(dbapi.Error):
+        vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 1, filter={"start": 100}, rerank_config={"model_id": "non_existing_model"})
+
+
 def test_hanavector_similarity_search_simple(vectorDB, rerank_config_param) -> None:
     vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
     rerank_config = build_rerank_config(rerank_config_param, top_n=1)
@@ -242,6 +247,11 @@ def test_hanavector_similarity_search_simple_invalid_rerank_config(vectorDB, inv
 
     with pytest.raises(ValueError, match=expected_error_message):
         vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 1, rerank_config=invalid_rerank_config)
+
+
+def test_hanavector_similarity_search_simple_invalid_rerank_model_id(vectorDB) -> None:
+    with pytest.raises(dbapi.Error):
+        vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 1, rerank_config={"model_id": "non_existing_model"})
 
 
 def test_hanavector_max_marginal_relevance_search(vectorDB) -> None:
