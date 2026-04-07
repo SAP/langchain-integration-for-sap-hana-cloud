@@ -59,6 +59,17 @@ def test_rerank(reranker, documents, query, top_n, return_documents, rank_fields
         prev_score = item[1]
 
 
+@pytest.mark.parametrize("invalid_top_n", [-1, 0, len(HanaTestConstants.TEXTS) + 1])
+def test_rerank_with_invalid_top_n(reranker, documents, invalid_top_n):
+    with pytest.raises(ValueError, match="top_n must be greater than 0 and less than or equal to the number of documents"):
+        reranker.rerank(documents, HanaTestConstants.TEXTS[0], invalid_top_n)
+
+
+def test_rerank_with_invalid_metadata_key(reranker, documents):
+    with pytest.raises(ValueError, match="Invalid metadata key invalid-key"):
+        reranker.rerank(documents, HanaTestConstants.TEXTS[0], rank_fields=["invalid-key"])
+
+
 def test_compress_documents(reranker, documents):
     documents.append(Document(page_content="abc", metadata={"start": 400, "quality": "ugly", "Owner": "Bob"}))
     compressed_docs = reranker.compress_documents(query=HanaTestConstants.TEXTS[0], documents=documents)
