@@ -707,8 +707,8 @@ class HanaDB(VectorStore):
     def _validate_rerank_config(rerank_config: dict) -> None:
         if not isinstance(rerank_config, dict):
             raise ValueError("rerank_config must be a dictionary")
-        if "query" not in rerank_config or not isinstance(rerank_config["query"], str) or not rerank_config["query"]:
-            raise ValueError("rerank_config must contain 'query' and it must be a non-empty string")
+        if "query" not in rerank_config or not isinstance(rerank_config["query"], str):
+            raise ValueError("rerank_config must contain 'query' and it must be a string")
         if "top_n" in rerank_config and (not isinstance(rerank_config["top_n"], int) or rerank_config["top_n"] <= 0):
             raise ValueError("rerank_config 'top_n' must be a positive integer")
         if "rank_fields" in rerank_config:
@@ -791,7 +791,7 @@ class HanaDB(VectorStore):
         else:
             if rerank_config:
                 rerank_config_copy = {**rerank_config}
-                if not rerank_config.get("query"):
+                if rerank_config.get("query") is None:
                         rerank_config_copy["query"] = query  # Use the original query if no specific rerank query is provided
             else:
                 rerank_config_copy = None
@@ -874,7 +874,7 @@ class HanaDB(VectorStore):
         
         if rerank_config:
             rerank_config_copy = {**rerank_config}
-            if not rerank_config.get("query"):
+            if rerank_config.get("query") is None:
                 rerank_config_copy["query"] = query  # Use the original query if no specific rerank query is provided
         else:
             rerank_config_copy = None

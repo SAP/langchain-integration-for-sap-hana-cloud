@@ -129,14 +129,20 @@ def build_rerank_config(base_config: dict[str, Any] | None, top_n: int, query: s
 
 
 @pytest.fixture(params=[
-    ({"query": 5}, "rerank_config must contain 'query' and it must be a non-empty string"),
+    ({"query": 5}, "rerank_config must contain 'query' and it must be a string"),
     ({"top_n": "not_an_int"}, "rerank_config 'top_n' must be a positive integer"),
     ({"model_id": 5}, "rerank_config 'model_id' must be a non-empty string"),
+    ({"model_id": ""}, "rerank_config 'model_id' must be a non-empty string"),
     ({"rank_fields": "not_a_list"}, "rerank_config 'rank_fields' must be a list of strings"),
     ({"rank_fields": [1, 2, 3]}, "rerank_config 'rank_fields' must be a list of strings")
-], ids=["query_not_str", "top_n_not_int", "model_id_not_str", "rank_fields_not_list", "rank_fields_not_str"])
+], ids=["query_not_str", "top_n_not_int", "model_id_not_str", "model_id_empty_str", "rank_fields_not_list", "rank_fields_not_str"])
 def invalid_rerank_config_with_error_message(request):
     return request.param
+
+
+@pytest.fixture
+def invalid_rerank_config_non_existent_model_id():
+    return {"query": "test_query", "model_id": "non_existing_model"}
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
@@ -346,9 +352,9 @@ def test_hanavector_similarity_search_simple_invalid_rerank_config(vectorDB, inv
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_similarity_search_simple_invalid_rerank_model_id(vectorDB) -> None:
+def test_hanavector_similarity_search_simple_invalid_rerank_model_id(vectorDB, invalid_rerank_config_non_existent_model_id) -> None:
     with pytest.raises(dbapi.Error):
-        vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 1, rerank_config={"model_id": "non_existing_model"})
+        vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 1, rerank_config=invalid_rerank_config_non_existent_model_id)
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
@@ -389,9 +395,9 @@ def test_hanavector_similarity_search_by_vector_simple_invalid_rerank_config(vec
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_similarity_search_by_vector_simple_invalid_rerank_model_id(vectorDB) -> None:
+def test_hanavector_similarity_search_by_vector_simple_invalid_rerank_model_id(vectorDB, invalid_rerank_config_non_existent_model_id) -> None:
     with pytest.raises(dbapi.Error):
-        vectorDB.similarity_search_by_vector(embedding.embed_query(HanaTestConstants.TEXTS[0]), 1, rerank_config={"query": HanaTestConstants.TEXTS[0], "model_id": "non_existing_model"})
+        vectorDB.similarity_search_by_vector(embedding.embed_query(HanaTestConstants.TEXTS[0]), 1, rerank_config=invalid_rerank_config_non_existent_model_id)
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
@@ -437,7 +443,7 @@ def test_hanavector_similarity_search_simple_euclidean_distance_invalid_rerank_c
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_similarity_search_simple_euclidean_distance_invalid_rerank_model_id(table_name_with_cleanup) -> None:
+def test_hanavector_similarity_search_simple_euclidean_distance_invalid_rerank_model_id(table_name_with_cleanup, invalid_rerank_config_non_existent_model_id) -> None:
     table_name = table_name_with_cleanup
 
     # Check if table is created
@@ -450,7 +456,7 @@ def test_hanavector_similarity_search_simple_euclidean_distance_invalid_rerank_m
     )
 
     with pytest.raises(dbapi.Error):
-        vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 1, rerank_config={"model_id": "non_existing_model"})
+        vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 1, rerank_config=invalid_rerank_config_non_existent_model_id)
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
@@ -483,9 +489,9 @@ def test_hanavector_similarity_search_with_metadata_invalid_rerank_config(
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_similarity_search_with_metadata_invalid_rerank_model_id(vectorDB) -> None:
+def test_hanavector_similarity_search_with_metadata_invalid_rerank_model_id(vectorDB, invalid_rerank_config_non_existent_model_id) -> None:
     with pytest.raises(dbapi.Error):
-        vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 3, rerank_config={"model_id": "non_existing_model"})
+        vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 3, rerank_config=invalid_rerank_config_non_existent_model_id)
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
@@ -531,9 +537,9 @@ def test_hanavector_similarity_search_with_metadata_filter_invalid_rerank_config
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_similarity_search_with_metadata_filter_invalid_rerank_model_id(vectorDB) -> None:
+def test_hanavector_similarity_search_with_metadata_filter_invalid_rerank_model_id(vectorDB, invalid_rerank_config_non_existent_model_id) -> None:
     with pytest.raises(dbapi.Error):
-        vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 3, filter={"start": 100}, rerank_config={"model_id": "non_existing_model"})
+        vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 3, filter={"start": 100}, rerank_config=invalid_rerank_config_non_existent_model_id)
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
@@ -564,9 +570,9 @@ def test_hanavector_similarity_search_with_metadata_filter_string_invalid_rerank
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_similarity_search_with_metadata_filter_string_invalid_rerank_model_id(vectorDB) -> None:
+def test_hanavector_similarity_search_with_metadata_filter_string_invalid_rerank_model_id(vectorDB, invalid_rerank_config_non_existent_model_id) -> None:
     with pytest.raises(dbapi.Error):
-        vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 3, filter={"quality": "bad"}, rerank_config={"model_id": "non_existing_model"})
+        vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 3, filter={"quality": "bad"}, rerank_config=invalid_rerank_config_non_existent_model_id)
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
@@ -597,9 +603,9 @@ def test_hanavector_similarity_search_with_metadata_filter_bool_invalid_rerank_c
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_similarity_search_with_metadata_filter_bool_invalid_rerank_model_id(vectorDB) -> None:
+def test_hanavector_similarity_search_with_metadata_filter_bool_invalid_rerank_model_id(vectorDB, invalid_rerank_config_non_existent_model_id) -> None:
     with pytest.raises(dbapi.Error):
-        vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 3, filter={"ready": False}, rerank_config={"model_id": "non_existing_model"})
+        vectorDB.similarity_search(HanaTestConstants.TEXTS[0], 3, filter={"ready": False}, rerank_config=invalid_rerank_config_non_existent_model_id)
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
@@ -648,9 +654,9 @@ def test_hanavector_similarity_search_with_score_invalid_rerank_config(vectorDB,
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_similarity_search_with_score_invalid_rerank_model_id(vectorDB) -> None:
+def test_hanavector_similarity_search_with_score_invalid_rerank_model_id(vectorDB, invalid_rerank_config_non_existent_model_id) -> None:
     with pytest.raises(dbapi.Error):
-        vectorDB.similarity_search_with_score(HanaTestConstants.TEXTS[0], 3, rerank_config={"model_id": "non_existing_model"})
+        vectorDB.similarity_search_with_score(HanaTestConstants.TEXTS[0], 3, rerank_config=invalid_rerank_config_non_existent_model_id)
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
