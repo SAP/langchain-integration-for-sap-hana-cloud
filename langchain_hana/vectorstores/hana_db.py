@@ -678,7 +678,7 @@ class HanaDB(VectorStore):
         temp_table_name = f"#{self.table_name}_TEMP"
         # TEMP TABLES ARE ROW BASED BY DEFAULT
         create_temp_table_sql = f'''
-        CREATE LOCAL TEMPORARY COLUMN TABLE {temp_table_name} (
+        CREATE LOCAL TEMPORARY COLUMN TABLE "{temp_table_name}" (
             ID INT,
             "VEC_TEXT" NCLOB,
             "VEC_VECTOR" {self.vector_column_type}
@@ -692,15 +692,15 @@ class HanaDB(VectorStore):
 
         try:
             insert_temp_table_sql = f'''
-            INSERT INTO {temp_table_name} (ID, "VEC_TEXT", "VEC_VECTOR")
+            INSERT INTO "{temp_table_name}" (ID, "VEC_TEXT", "VEC_VECTOR")
             VALUES (?,?,NULL)
             '''
             cur.executemany(insert_temp_table_sql, [(i, text) for i,text in enumerate(texts)])
             
             if self.internal_embedding_remote_source:
-                vector_embedding_sql = f"""VECTOR_EMBEDDING(:i_text, 'DOCUMENT', '{self.internal_embedding_model_id}', "{self.internal_embedding_remote_source}")"""
+                vector_embedding_sql = f"""VECTOR_EMBEDDING(:i_text, 'DOCUMENT', :i_model_id, "{self.internal_embedding_remote_source}")"""
             else:
-                vector_embedding_sql = f"""VECTOR_EMBEDDING(:i_text, 'DOCUMENT', '{self.internal_embedding_model_id}')"""
+                vector_embedding_sql = """VECTOR_EMBEDDING(:i_text, 'DOCUMENT', :i_model_id)"""
             vector_embedding_sql = self._convert_vector_embedding_to_column_type(
                 vector_embedding_sql
             )
@@ -708,9 +708,10 @@ class HanaDB(VectorStore):
             uid = str(uuid.uuid4()).replace("-", "_")
             temp_func_name = f"F_VECTOR_EMBEDDING_{uid}"
             create_map_merge_function_sql = f"""
-            CREATE OR REPLACE FUNCTION {temp_func_name}(
+            CREATE FUNCTION "{temp_func_name}"(
                     IN i_id INT,
-                    IN i_text NCLOB
+                    IN i_text NCLOB,
+                    IN i_model_id NVARCHAR(5000)
                 )
                 RETURNS TABLE("ID" INT, "PAL_EMBEDDING" {self.vector_column_type})
                 LANGUAGE SQLSCRIPT READS SQL DATA AS
@@ -729,29 +730,29 @@ class HanaDB(VectorStore):
 
             try:
                 call_map_merge_sql = f"""
-                    DO()
+                    DO(IN i_model_id NVARCHAR(5000) => ?)
                     BEGIN
-                        dat = SELECT "ID", "VEC_TEXT", "VEC_VECTOR" FROM {temp_table_name};
-                        o_res = MAP_MERGE(:dat, {temp_func_name}(:dat."ID", :dat."VEC_TEXT"));
-                        MERGE INTO {temp_table_name} AS dat
+                        dat = SELECT "ID", "VEC_TEXT", "VEC_VECTOR" FROM "{temp_table_name}";
+                        o_res = MAP_MERGE(:dat, "{temp_func_name}"(:dat."ID", :dat."VEC_TEXT", :i_model_id));
+                        MERGE INTO "{temp_table_name}" AS dat
                         USING :o_res AS upd
                         ON dat."ID" = upd."ID"
                         WHEN MATCHED THEN
                             UPDATE SET dat."VEC_VECTOR" = upd."PAL_EMBEDDING";
                     END;
                 """
-                cur.execute(call_map_merge_sql)
+                cur.execute(call_map_merge_sql, [self.internal_embedding_model_id])
 
                 fetch_embeddings_sql = f"""
-                SELECT VEC_VECTOR FROM {temp_table_name}
+                SELECT VEC_VECTOR FROM "{temp_table_name}" ORDER BY ID
                 """
                 cur.execute(fetch_embeddings_sql)
                 rows = cur.fetchall()
                 embeddings = [row[0] for row in rows]
             finally:
-                cur.execute(f"DROP FUNCTION {temp_func_name}")
+                cur.execute(f'DROP FUNCTION "{temp_func_name}"')
         finally:
-            cur.execute(f"DROP TABLE {temp_table_name}")
+            cur.execute(f'DROP TABLE "{temp_table_name}"')
 
         sql_params = []
         for i, text in enumerate(texts):
