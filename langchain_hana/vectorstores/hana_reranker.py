@@ -74,7 +74,7 @@ class HanaReranker(BaseDocumentCompressor):
         with self.connection.cursor() as cur:
             temp_table_name = "#RERANK_DOCS"
             create_temp_table_sql = f"""
-            CREATE LOCAL TEMPORARY TABLE {temp_table_name} (
+            CREATE LOCAL TEMPORARY TABLE "{temp_table_name}" (
                 ID NVARCHAR(5000),
                 TEXT NCLOB,
                 METADATA NCLOB
@@ -86,7 +86,7 @@ class HanaReranker(BaseDocumentCompressor):
                 raise RuntimeError(f"Error creating temporary table for reranking: {e}")
 
             try:
-                insert_sql = f"INSERT INTO {temp_table_name} (ID, TEXT, METADATA) VALUES (?, ?, ?)"
+                insert_sql = f'INSERT INTO "{temp_table_name}" (ID, TEXT, METADATA) VALUES (?, ?, ?)'
                 insert_sql_params = []
                 for doc in documents:
                     _sanitize_metadata_keys(list(doc.metadata.keys()))
@@ -113,7 +113,7 @@ class HanaReranker(BaseDocumentCompressor):
                     TEXT,
                     METADATA,
                     {cross_encode_sql} AS SCORE
-                FROM {temp_table_name}
+                FROM "{temp_table_name}"
                 ORDER BY SCORE DESC
                 """
                 cur.execute(reranking_sql, cross_encode_params)
@@ -130,7 +130,7 @@ class HanaReranker(BaseDocumentCompressor):
                         document_idx_with_scores.append((idx, score))
             finally:
                 cur.execute(
-                    f"DROP TABLE {temp_table_name}"
+                    f"""DROP TABLE "{temp_table_name}" """
                 )  # Ensure temp table is dropped
 
         return document_idx_with_scores
