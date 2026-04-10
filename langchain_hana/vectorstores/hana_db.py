@@ -744,7 +744,7 @@ class HanaDB(VectorStore):
                 cur.execute(call_map_merge_sql, [self.internal_embedding_model_id])
 
                 fetch_embeddings_sql = f"""
-                SELECT VEC_VECTOR FROM "{temp_table_name}" ORDER BY ID
+                SELECT "VEC_VECTOR" FROM "{temp_table_name}" ORDER BY "ID"
                 """
                 cur.execute(fetch_embeddings_sql)
                 rows = cur.fetchall()
