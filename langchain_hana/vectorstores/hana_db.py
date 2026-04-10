@@ -31,6 +31,7 @@ from langchain_hana.utils import DistanceStrategy, _validate_k, _validate_k_and_
 from langchain_hana.vectorstores.utils import (
     _generate_cross_encode_sql_and_params,
     _sanitize_metadata_keys,
+    _validate_rerank_model_id,
 )
 
 logger = logging.getLogger(__name__)
@@ -717,23 +718,6 @@ class HanaDB(VectorStore):
             _sanitize_metadata_keys(rerank_config["rank_fields"])
         if "model_id" not in rerank_config or not isinstance(rerank_config["model_id"], str) or not rerank_config["model_id"]:
             raise ValueError("rerank_config 'model_id' must be a non-empty string")
-
-    def _validate_rerank_model_id(self, rerank_model_id: str) -> None:
-        if not isinstance(rerank_model_id, str) or not rerank_model_id:
-            raise ValueError("rerank_model_id must be a non-empty string")
-        if rerank_model_id in self._validated_reranking_model_ids:
-            return
-        with self.connection.cursor() as cur:
-            try:
-                cur.execute(
-                    # CROSS_ENCODE IS A WINDOW FUNCTION
-                    # passing a single text through a "'test'""
-                    f"SELECT {_generate_cross_encode_sql_and_params("'test'", '', 'test', [], rerank_model_id)[0]} FROM SYS.DUMMY", ['test', rerank_model_id]
-                )
-                self._validated_reranking_model_ids.add(rerank_model_id)
-            except dbapi.Error as e:
-                logger.error(f"Database error while validating rerank model ID: {e}")
-                raise
         
     def similarity_search(  # type: ignore[override]
         self, query: str, k: int = 4, filter: Optional[dict] = None, *, rerank_config: Optional[dict[str, Any]] = None
@@ -970,7 +954,7 @@ class HanaDB(VectorStore):
             rerank_rank_fields = rerank_config.get("rank_fields", [])  # Default rank_fields to empty list
             rerank_model_id = rerank_config["model_id"]
 
-            self._validate_rerank_model_id(rerank_model_id)
+            _validate_rerank_model_id(rerank_model_id, self.connection)
 
             rerank_query = rerank_config["query"]
             
@@ -986,9 +970,9 @@ class HanaDB(VectorStore):
             )
             sql_str = f"""
             SELECT TOP {rerank_top_n}
-            {self.content_column},
-            {self.metadata_column},
-            {self.vector_column},
+            "{self.content_column}",
+            "{self.metadata_column}",
+            "{self.vector_column}",
             {cross_encoding_sql} AS SCORE
             FROM (
                 {sql_str}

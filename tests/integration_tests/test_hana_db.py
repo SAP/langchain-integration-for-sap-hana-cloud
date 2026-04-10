@@ -323,7 +323,7 @@ def test_hanavector_from_texts(table_name_with_cleanup) -> None:
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_similarity_search_simple(vectorDB) -> None:
+def test_hanavector_similarity_search_simple(vectorDB, rerank_config_param) -> None:
     vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
     rerank_config = build_rerank_config(rerank_config_param, top_n=1)
 

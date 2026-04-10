@@ -7,7 +7,8 @@ from langchain_core.documents import BaseDocumentCompressor, Document
 from pydantic import ConfigDict, Field, model_validator
 from langchain_hana.vectorstores.utils import (
     _generate_cross_encode_sql_and_params,
-    _sanitize_metadata_keys
+    _sanitize_metadata_keys,
+    _validate_rerank_model_id
 )
 
 logger = logging.getLogger(__name__)
@@ -30,17 +31,7 @@ class HanaReranker(BaseDocumentCompressor):
     @model_validator(mode="after")
     def validate_model_supported(self) -> Any:
         """Validate that the provided model is supported by SAP HANA for reranking."""
-        with self.connection.cursor() as cur:
-            try:
-                cur.execute(
-                    # CROSS_ENCODE IS A WINDOW FUNCTION
-                    # passing a single text through a "'test'""
-                    f"SELECT {_generate_cross_encode_sql_and_params("'test'", '', 'test', [], self.model_id)[0]} FROM SYS.DUMMY",
-                    ["test", self.model_id],
-                )
-            except dbapi.Error as e:
-                logger.error(f"Database error while validating rerank model ID: {e}")
-                raise
+        _validate_rerank_model_id(self.model_id, self.connection)
         return self
 
     def rerank(
@@ -75,9 +66,9 @@ class HanaReranker(BaseDocumentCompressor):
             temp_table_name = "#RERANK_DOCS"
             create_temp_table_sql = f"""
             CREATE LOCAL TEMPORARY TABLE "{temp_table_name}" (
-                ID NVARCHAR(5000),
-                TEXT NCLOB,
-                METADATA NCLOB
+                "ID" NVARCHAR(5000),
+                "TEXT" NCLOB,
+                "METADATA" NCLOB
             );
             """
             try:
@@ -86,7 +77,7 @@ class HanaReranker(BaseDocumentCompressor):
                 raise RuntimeError(f"Error creating temporary table for reranking: {e}")
 
             try:
-                insert_sql = f'INSERT INTO "{temp_table_name}" (ID, TEXT, METADATA) VALUES (?, ?, ?)'
+                insert_sql = f'INSERT INTO "{temp_table_name}" ("ID", "TEXT", "METADATA") VALUES (?, ?, ?)'
                 insert_sql_params = []
                 for doc in documents:
                     _sanitize_metadata_keys(list(doc.metadata.keys()))
@@ -108,13 +99,13 @@ class HanaReranker(BaseDocumentCompressor):
                 reranking_sql = f"""
                 SELECT
                     TOP {top_n}
-                    ROW_NUMBER() OVER () - 1 AS INDEX,
-                    ID,
-                    TEXT,
-                    METADATA,
-                    {cross_encode_sql} AS SCORE
+                    ROW_NUMBER() OVER () - 1 AS "INDEX",
+                    "ID",
+                    "TEXT",
+                    "METADATA",
+                    {cross_encode_sql} AS "SCORE"
                 FROM "{temp_table_name}"
-                ORDER BY SCORE DESC
+                ORDER BY "SCORE" DESC
                 """
                 cur.execute(reranking_sql, cross_encode_params)
                 rows = cur.fetchall()
