@@ -185,6 +185,22 @@ def test_hanavector_add_texts(vectorDB, use_map_merge: bool) -> None:
     assert number_of_rows == number_of_texts
 
 
+def test_hanavector_add_texts_map_merge_preserves_order(vectorDB) -> None:
+    vectorDB.add_texts(
+        texts=HanaTestConstants.TEXTS,
+        metadatas=HanaTestConstants.METADATAS,
+        use_map_merge=True,
+    )
+
+    # VECTOR_EMEDDING Function is at times non-deterministic
+    # Therefore we use an approximate approach to assert the insertion order is preserved
+    for text, metadata in zip(HanaTestConstants.TEXTS, HanaTestConstants.METADATAS):
+        result = vectorDB.similarity_search(query=text, k=1)
+        assert len(result) == 1
+        assert result[0].page_content == text
+        assert result[0].metadata == metadata
+
+
 @pytest.mark.parametrize("use_map_merge", [False, True])
 def test_hanavector_from_texts(table_name_with_cleanup, use_map_merge: bool) -> None:
     table_name = table_name_with_cleanup
