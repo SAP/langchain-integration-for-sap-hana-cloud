@@ -760,12 +760,11 @@ class HanaDB(VectorStore):
             metadata, extracted_special_metadata = self._split_off_special_metadata(
                 metadata
             )
+            _sanitize_metadata_keys(list(metadata.keys()))
             sql_params.append(
                 (
                     text,
-                    json.dumps(
-                    HanaDB._sanitize_metadata_keys(metadata)
-                    ),
+                    json.dumps(metadata),
                     embeddings[i],
                     *extracted_special_metadata
                 )
