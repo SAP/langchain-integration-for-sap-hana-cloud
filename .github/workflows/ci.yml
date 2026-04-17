@@ -22,6 +22,8 @@ on:
         required: true
       HANA_DB_EMBEDDING_REMOTE_SOURCE:
         required: true
+      HANA_DB_RERANK_MODEL_ID:
+        required: true
 
 env:
   PYTHON_VERSION: "3.11"
@@ -40,6 +42,7 @@ jobs:
       HANA_DB_EMBEDDING_MODEL_ID: ${{ secrets.HANA_DB_EMBEDDING_MODEL_ID }}
       HANA_DB_EMBEDDING_REMOTE_MODEL_ID: ${{ secrets.HANA_DB_EMBEDDING_REMOTE_MODEL_ID }}
       HANA_DB_EMBEDDING_REMOTE_SOURCE: ${{ secrets.HANA_DB_EMBEDDING_REMOTE_SOURCE }}
+      HANA_DB_RERANK_MODEL_ID: ${{ secrets.HANA_DB_RERANK_MODEL_ID }}
 
 
     steps:
