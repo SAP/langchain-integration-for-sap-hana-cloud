@@ -152,7 +152,7 @@ jobs:
           poetry-version: ${{ env.POETRY_VERSION }}
           cache-key: release
 
-      - uses: actions/cache@v5download-artifact@v8
+      - uses: actions/download-artifact@v8
         with:
           name: dist
           path: ./dist/
