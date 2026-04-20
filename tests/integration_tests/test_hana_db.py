@@ -298,6 +298,12 @@ def test_hanavector_add_texts(vectorDB) -> None:
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
+def test_hanavector_add_texts_with_map_merge(vectorDB) -> None:
+    with pytest.raises(ValueError, match="map merge cannot be used with external embeddings"):
+        vectorDB.add_texts(texts=HanaTestConstants.TEXTS, use_map_merge=True)
+
+
+@pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_from_texts(table_name_with_cleanup) -> None:
     table_name = table_name_with_cleanup
     vectorDB = HanaDB.from_texts(
@@ -323,7 +329,20 @@ def test_hanavector_from_texts(table_name_with_cleanup) -> None:
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_similarity_search_simple(vectorDB, rerank_config_param) -> None:
+def test_hanavector_from_texts_with_map_merge(table_name_with_cleanup) -> None:
+    with pytest.raises(ValueError, match="map merge cannot be used with external embeddings"):
+        table_name = table_name_with_cleanup
+        vectorDB = HanaDB.from_texts(
+            connection=config.conn,
+            texts=HanaTestConstants.TEXTS,
+            embedding=embedding,
+            table_name=table_name,
+            use_map_merge=True,
+        )
+
+
+@pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
+def test_hanavector_similarity_search_simple(vectorDB) -> None:
     vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
     rerank_config = build_rerank_config(rerank_config_param, top_n=1)
 
