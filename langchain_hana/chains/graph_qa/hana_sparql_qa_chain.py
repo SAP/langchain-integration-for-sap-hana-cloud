@@ -145,7 +145,7 @@ class HanaSparqlQAChain(Chain):
         self,
         inputs: Dict[str, Any],
         run_manager: Optional[CallbackManagerForChainRun] = None,
-        is_insert=False,
+        is_insert: bool = False,
     ) -> Dict[str, str]:
         "Generate SPARQL query, use it to look up in the graph and answer the question."
         _run_manager = run_manager or CallbackManagerForChainRun.get_noop_manager()

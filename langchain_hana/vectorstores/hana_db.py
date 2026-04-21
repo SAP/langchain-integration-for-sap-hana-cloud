@@ -16,7 +16,7 @@ from typing import (
 )
 
 import numpy as np
-from hdbcli import dbapi  # type: ignore
+from hdbcli import dbapi
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_core.runnables.config import run_in_executor
@@ -101,7 +101,7 @@ class HanaDB(VectorStore):
         self.specific_metadata_columns = HanaDB._sanitize_specific_metadata_columns(
             specific_metadata_columns or []
         )
-        self._validated_reranking_model_ids = set()
+        self._validated_reranking_model_ids: set[str] = set()
 
         # Configure the embedding (internal or external)
         self.embedding: Embeddings
@@ -162,14 +162,14 @@ class HanaDB(VectorStore):
         for column_name in self.specific_metadata_columns:
             self._check_column(self.table_name, column_name)
 
-    def _table_exists(self, table_name) -> bool:  # type: ignore[no-untyped-def]
+    def _table_exists(self, table_name: str) -> bool:
         sql_str = (
             "SELECT COUNT(*) FROM SYS.TABLES WHERE SCHEMA_NAME = CURRENT_SCHEMA"
             " AND TABLE_NAME = ?"
         )
         try:
             cur = self.connection.cursor()
-            cur.execute(sql_str, (table_name))
+            cur.execute(sql_str, (table_name,))
             if cur.has_result_set():
                 rows = cur.fetchall()
                 if rows[0][0] == 1:
@@ -178,9 +178,13 @@ class HanaDB(VectorStore):
             cur.close()
         return False
 
-    def _check_column(  # type: ignore[no-untyped-def]
-        self, table_name, column_name, column_type=None, column_length=None
-    ):
+    def _check_column(
+        self,
+        table_name: str,
+        column_name: str,
+        column_type: list[str] | None = None,
+        column_length: int | None = None,
+    ) -> None:
         sql_str = (
             "SELECT DATA_TYPE_NAME, LENGTH FROM SYS.TABLE_COLUMNS WHERE "
             "SCHEMA_NAME = CURRENT_SCHEMA "
@@ -213,12 +217,14 @@ class HanaDB(VectorStore):
         finally:
             cur.close()
 
-    def _generate_vector_embedding_sql_and_params(self, text: str, type: str) -> str:
+    def _generate_vector_embedding_sql_and_params(
+        self, text: str, type: str
+    ) -> tuple[str, tuple[str, str]]:
         """Generate the VECTOR_EMBEDDING SQL expression and parameters."""
         if type != "QUERY" and type != "DOCUMENT":
             raise ValueError("type must be either 'QUERY' or 'DOCUMENT'")
 
-        vector_embedding_params = [text, self.internal_embedding_model_id]
+        vector_embedding_params = (text, self.internal_embedding_model_id)
         if not self.internal_embedding_remote_source:
             vector_embedding_sql = f"""VECTOR_EMBEDDING(?, '{type}', ?)"""
         else:
@@ -260,16 +266,16 @@ class HanaDB(VectorStore):
         return self.embedding
 
     @staticmethod
-    def _sanitize_name(input_str: str) -> str:  # type: ignore[misc]
+    def _sanitize_name(input_str: str) -> str:
         # Remove characters that are not alphanumeric or underscores
         return re.sub(r"[^a-zA-Z0-9_]", "", input_str)
 
     @staticmethod
-    def _sanitize_int(input_int: any) -> int:  # type: ignore[valid-type]
+    def _sanitize_int(input_int: Any) -> int:
         value = int(str(input_int))
         if value < -1:
             raise ValueError(f"Value ({value}) must not be smaller than -1")
-        return int(str(input_int))
+        return value
 
     @staticmethod
     def _sanitize_list_float(embedding: list[float]) -> list[float]:
@@ -316,6 +322,8 @@ class HanaDB(VectorStore):
         try:
             cursor.execute("SELECT CLOUD_VERSION FROM SYS.M_DATABASE;")
             result = cursor.fetchone()
+            if result is None:
+                return None
             return result[0]
         except dbapi.Error:
             return None
@@ -393,17 +401,19 @@ class HanaDB(VectorStore):
                 f"Unsupported vector column type: {self.vector_column_type}"
             )
 
-    def _split_off_special_metadata(self, metadata: dict) -> tuple[dict, list]:
+    def _split_off_special_metadata(
+        self, metadata: dict
+    ) -> tuple[dict, tuple[Any, ...]]:
         # Use provided values by default or fallback
         special_metadata = []
 
         if not metadata:
-            return {}, []
+            return {}, ()
 
         for column_name in self.specific_metadata_columns:
             special_metadata.append(metadata.get(column_name, None))
 
-        return metadata, special_metadata
+        return metadata, tuple(special_metadata)
 
     def _convert_to_target_vector_type(self, expr: str) -> str:
         """
@@ -631,16 +641,17 @@ class HanaDB(VectorStore):
                 metadata
             )
             _sanitize_metadata_keys(list(metadata.keys()))
-            parameters = [text]
-            parameters.append(
-                json.dumps(metadata)
-            )  # Replace `metadata_value` with the actual value
-            parameters.extend(
-                self._generate_vector_embedding_sql_and_params(text, "DOCUMENT")[1]
+
+            sql_params.append(
+                (
+                    text,
+                    json.dumps(metadata),
+                    *self._generate_vector_embedding_sql_and_params(text, "DOCUMENT")[
+                        1
+                    ],
+                    *extracted_special_metadata,
+                )
             )
-            # specific_metadata_values must align with the columns
-            parameters.extend(extracted_special_metadata)
-            sql_params.append(parameters)
 
         specific_metadata_columns_string = self._get_specific_metadata_columns_string()
 
@@ -761,7 +772,7 @@ class HanaDB(VectorStore):
                             UPDATE SET dat."VEC_VECTOR" = upd."PAL_EMBEDDING";
                     END;
                 """
-                cur.execute(call_map_merge_sql, [self.internal_embedding_model_id])
+                cur.execute(call_map_merge_sql, (self.internal_embedding_model_id,))
 
                 fetch_embeddings_sql = f"""
                 SELECT "VEC_VECTOR" FROM "{temp_table_name}" ORDER BY "ID"
@@ -818,7 +829,7 @@ class HanaDB(VectorStore):
         texts: list[str],
         embedding: Embeddings,
         metadatas: Optional[list[dict]] = None,
-        connection: dbapi.Connection = None,
+        connection: dbapi.Connection = None,  # type: ignore[assignment]
         distance_strategy: DistanceStrategy = default_distance_strategy,
         table_name: str = default_table_name,
         content_column: str = default_content_column,
@@ -1092,7 +1103,7 @@ class HanaDB(VectorStore):
         embedding_expr: str,
         k: int,
         filter: Optional[dict] = None,
-        vector_embedding_params: Optional[dict] = None,
+        vector_embedding_params: Optional[tuple[str, str]] = None,
         rerank_config: Optional[dict[str, Any]] = None,
     ) -> list[tuple[Document, float, list[float]]]:
         """Perform similarity search and return documents with scores and vectors.
@@ -1159,7 +1170,7 @@ class HanaDB(VectorStore):
             f"  {embedding_expr}) AS SCORE "  # row[3]
             f"FROM {from_clause}"
         )
-        parameters = []
+        parameters: tuple[Any, ...] = ()
         if vector_embedding_params:
             parameters += vector_embedding_params
         where_clause, where_parameters = CreateWhereClause(self)(filter)
@@ -1208,7 +1219,8 @@ class HanaDB(VectorStore):
             ORDER BY SCORE DESC
             """
             parameters = (
-                cross_encoding_params + parameters
+                *cross_encoding_params,
+                *parameters,
             )  # CROSS_ENCODE params come first in the SQL expression
 
         try:
@@ -1459,10 +1471,6 @@ class HanaDB(VectorStore):
             lambda_mult=lambda_mult,
             filter=filter,
         )
-
-    def _parse_float_array_from_string(array_as_string: str) -> list[float]:  # type: ignore[misc]
-        array_wo_brackets = array_as_string[1:-1]
-        return [float(x) for x in array_wo_brackets.split(",")]
 
     def max_marginal_relevance_search_by_vector(  # type: ignore[override]
         self,

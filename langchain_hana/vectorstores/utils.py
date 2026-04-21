@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 _compiled_pattern: Pattern = re.compile("^[_a-zA-Z][_a-zA-Z0-9]*$")
 
 
-def _sanitize_metadata_keys(metadata_keys: list[str]):
+def _sanitize_metadata_keys(metadata_keys: list[str]) -> None:
     """Validate that all metadata keys are valid identifiers."""
     for key in metadata_keys:
         if not _compiled_pattern.match(key):
@@ -28,7 +28,7 @@ def _validate_rerank_model_id(model_id: str, connection: dbapi.Connection) -> No
             cur.execute(
                 # CROSS_ENCODE IS A WINDOW FUNCTION
                 "SELECT CROSS_ENCODE('test', 'test', ?) OVER() FROM SYS.DUMMY",
-                [model_id],
+                (model_id,),
             )
         except dbapi.Error as e:
             logger.error(f"Database error while validating rerank model ID: {e}")
@@ -41,7 +41,7 @@ def _generate_cross_encode_sql_and_params(
     query: str,
     rank_fields: list[str],
     rerank_model_id: str,
-) -> tuple[str, list]:
+) -> tuple[str, tuple[str, str]]:
     """Generate SQL and parameters for CROSS_ENCODE function."""
     if rank_fields:
         cross_encode_input = f"""'{text_column}:' || TO_NVARCHAR("{text_column}")"""
@@ -55,5 +55,5 @@ def _generate_cross_encode_sql_and_params(
 
     cross_encode_sql = f"CROSS_ENCODE({cross_encode_input}, ?, ?) OVER()"
 
-    cross_encode_params = [query, rerank_model_id]
+    cross_encode_params = (query, rerank_model_id)
     return cross_encode_sql, cross_encode_params

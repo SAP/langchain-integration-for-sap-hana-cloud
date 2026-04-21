@@ -1,8 +1,9 @@
 import json
 import logging
-from typing import Any, Sequence
+from typing import Any, Literal, Sequence, overload
 
 from hdbcli import dbapi
+from langchain_core.callbacks import Callbacks
 from langchain_core.documents import BaseDocumentCompressor, Document
 from pydantic import ConfigDict, Field, model_validator
 
@@ -36,6 +37,26 @@ class HanaReranker(BaseDocumentCompressor):
         _validate_rerank_model_id(self.model_id, self.connection)
         return self
 
+    @overload
+    def rerank(
+        self,
+        documents: Sequence[Document],
+        query: str,
+        top_n: int = 3,
+        return_documents: Literal[True] = True,
+        rank_fields: list[str] = [],
+    ) -> list[tuple[int, float, Document]]: ...
+
+    @overload
+    def rerank(
+        self,
+        documents: Sequence[Document],
+        query: str,
+        top_n: int = 3,
+        return_documents: Literal[False] = False,
+        rank_fields: list[str] = [],
+    ) -> list[tuple[int, float]]: ...
+
     def rerank(
         self,
         documents: Sequence[Document],
@@ -43,7 +64,7 @@ class HanaReranker(BaseDocumentCompressor):
         top_n: int = 3,
         return_documents: bool = True,
         rank_fields: list[str] = [],
-    ) -> list[tuple[int, Document, float]]:
+    ) -> list[tuple[int, float, Document]] | list[tuple[int, float]]:
         """Reranks documents based on relevance to the query.
 
         Uses SAP HANA's CROSS_ENCODE function.
@@ -70,7 +91,9 @@ class HanaReranker(BaseDocumentCompressor):
 
         _sanitize_metadata_keys(rank_fields)  # Validate rank_fields
 
-        document_idx_with_scores = []
+        document_idx_with_scores: (
+            list[tuple[int, float, Document]] | list[tuple[int, float]]
+        ) = []
 
         with self.connection.cursor() as cur:
             temp_table_name = "#RERANK_DOCS"
@@ -131,9 +154,9 @@ class HanaReranker(BaseDocumentCompressor):
                         document = Document(
                             id=doc_id, page_content=text, metadata=metadata
                         )
-                        document_idx_with_scores.append((idx, score, document))
+                        document_idx_with_scores.append((idx, score, document))  # type: ignore[arg-type]
                     else:
-                        document_idx_with_scores.append((idx, score))
+                        document_idx_with_scores.append((idx, score))  # type: ignore[arg-type]
             finally:
                 cur.execute(
                     f"""DROP TABLE "{temp_table_name}" """
@@ -145,6 +168,7 @@ class HanaReranker(BaseDocumentCompressor):
         self,
         documents: Sequence[Document],
         query: str,
+        callbacks: Callbacks | None = None,
     ) -> list[Document]:
         """Compress documents using the rerank method.
 

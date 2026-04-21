@@ -167,7 +167,9 @@ class HanaRdfGraph:
 
         return response
 
-    def _load_ontology_schema_graph_from_query(self, ontology_query) -> rdflib.Graph:
+    def _load_ontology_schema_graph_from_query(
+        self, ontology_query: str
+    ) -> rdflib.Graph:
         """
         Load an ontology schema by executing a SPARQL CONSTRUCT query.
         """
@@ -183,7 +185,9 @@ class HanaRdfGraph:
         return graph
 
     @staticmethod
-    def _load_ontology_schema_from_file(local_file: str, local_file_format: str = None):  # type: ignore[no-untyped-def, assignment]
+    def _load_ontology_schema_from_file(
+        local_file: str, local_file_format: str
+    ) -> rdflib.Graph:
         """
         Parse the ontology schema statements from the provided file
         """
@@ -252,8 +256,9 @@ class HanaRdfGraph:
                     f"CONSTRUCT {{?s ?p ?o}} FROM <{ontology_uri}> WHERE"
                     + "{?s ?p ?o .}"
                 )
+            # We are sure that ontology_query is not None
             ontology_schema_graph = self._load_ontology_schema_graph_from_query(
-                ontology_query
+                ontology_query  # type: ignore[arg-type]
             )
 
         self.schema = ontology_schema_graph
@@ -287,7 +292,7 @@ class HanaRdfGraph:
                 "Invalid query type. Only CONSTRUCT queries are supported for schema."
             )
 
-    def _get_generic_ontology_query(self):
+    def _get_generic_ontology_query(self) -> str:
         """
         Return a generic SPARQL CONSTRUCT that extracts
             a minimal OWL schema from the graph given by self.graph_uri.
