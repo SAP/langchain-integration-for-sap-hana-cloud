@@ -3,8 +3,8 @@
 import logging
 import re
 from typing import Pattern
-from hdbcli import dbapi
 
+from hdbcli import dbapi
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +17,7 @@ def _sanitize_metadata_keys(metadata_keys: list[str]):
     for key in metadata_keys:
         if not _compiled_pattern.match(key):
             raise ValueError(f"Invalid metadata key {key}")
-        
+
 
 def _validate_rerank_model_id(model_id: str, connection: dbapi.Connection) -> None:
     """Validate that the provided model is supported by SAP HANA for reranking."""
@@ -27,7 +27,7 @@ def _validate_rerank_model_id(model_id: str, connection: dbapi.Connection) -> No
         try:
             cur.execute(
                 # CROSS_ENCODE IS A WINDOW FUNCTION
-                f"SELECT CROSS_ENCODE('test', 'test', ?) OVER() FROM SYS.DUMMY",
+                "SELECT CROSS_ENCODE('test', 'test', ?) OVER() FROM SYS.DUMMY",
                 [model_id],
             )
         except dbapi.Error as e:

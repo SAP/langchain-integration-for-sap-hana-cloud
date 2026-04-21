@@ -34,7 +34,8 @@ class HanaRdfGraph:
         ontology_local_file (Optional[str]): Path to a local ontology file to load.
         ontology_local_file_format (Optional[str]): RDF format of the local file
             (e.g., 'turtle').
-        graph_uri (Optional[str]): The URI of the target graph; uses the DEFAULT graph if graph_uri in (None, "", "DEFAULT").
+        graph_uri (Optional[str]): The URI of the target graph; uses the DEFAULT
+            graph if graph_uri in (None, "", "DEFAULT").
         auto_extract_ontology (bool): If True and no schema source provided,
             automatically extract a generic ontology via SPARQL.
 
@@ -273,10 +274,13 @@ class HanaRdfGraph:
             raise TypeError("Schema query must be provided as string.")
 
         # We are using prepareQuery from rdflib.plugins.sparql to parse the query.
-        # HANA deviates from the standard SPARQL specification where FROM DEFAULT is a valid clause.
-        # To handle this, we remove 'FROM DEFAULT' before parsing.
-        # In the standard specification, when no FROM clause is given, the default graph is used. 
-        query_without_from_default = re.sub(r'\bfrom\s+default\b', '', construct_query, flags=re.IGNORECASE)
+        # HANA deviates from the standard SPARQL specification where FROM DEFAULT
+        # is a valid clause. To handle this, we remove 'FROM DEFAULT' before parsing.
+        # In the standard specification, when no FROM clause is given, the default
+        # graph is used.
+        query_without_from_default = re.sub(
+            r"\bfrom\s+default\b", "", construct_query, flags=re.IGNORECASE
+        )
         parsed_query = prepareQuery(query_without_from_default)
         if parsed_query.algebra.name != "ConstructQuery":
             raise ValueError(
@@ -296,7 +300,14 @@ class HanaRdfGraph:
         PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
         PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
-        CONSTRUCT {{ ?cls rdf:type owl:Class . ?cls rdfs:label ?clsLabel . ?rel rdf:type ?propertyType . ?rel rdfs:label ?relLabel . ?rel rdfs:domain ?domain . ?rel rdfs:range ?range .}}
+        CONSTRUCT {{
+            ?cls rdf:type owl:Class .
+            ?cls rdfs:label ?clsLabel .
+            ?rel rdf:type ?propertyType .
+            ?rel rdfs:label ?relLabel .
+            ?rel rdfs:domain ?domain .
+            ?rel rdfs:range ?range .
+        }}
         {self.from_clause}
         WHERE {{ # get properties
             {{SELECT DISTINCT ?domain ?rel ?relLabel ?propertyType ?range
@@ -305,7 +316,10 @@ class HanaRdfGraph:
                 ?subj a ?domain .
                 OPTIONAL{{?obj a ?rangeClass .}}
                 FILTER(?rel != rdf:type) #I think we should remove type
-                BIND(IF(isIRI(?obj) = true, owl:ObjectProperty, owl:DatatypeProperty) AS ?propertyType)
+                BIND(
+                    IF(isIRI(?obj) = true, owl:ObjectProperty, owl:DatatypeProperty)
+                    AS ?propertyType
+                )
                 BIND(COALESCE(?rangeClass, DATATYPE(?obj)) AS ?range)
                 BIND(STR(?rel) AS ?uriStr)       # Convert URI to string
                 BIND(REPLACE(?uriStr, "^.*[/#]", "") AS ?relLabel)
@@ -327,7 +341,8 @@ class HanaRdfGraph:
     def get_schema(self) -> rdflib.Graph:
         """
         Return the schema of the graph as an rdflib.Graph object.
-        
-        To get the schema in turtle format, use: graph.get_schema.serialize(format="turtle")
+
+        To get the schema in turtle format, use:
+        graph.get_schema.serialize(format="turtle")
         """
         return self.schema

@@ -1,5 +1,6 @@
 from langchain_core.prompts.prompt import PromptTemplate
 
+# ruff: noqa: E501
 SPARQL_GENERATION_SELECT_TEMPLATE = """
 Given the ontology below, create a SPARQL SELECT query from the user prompt.
 Generate only SELECT queries - do not generate INSERT, UPDATE, DELETE, CREATE, DROP, or any other modification queries.
@@ -38,6 +39,8 @@ The question is:
 SPARQL_GENERATION_SELECT_PROMPT = PromptTemplate(
     input_variables=["schema", "prompt"], template=SPARQL_GENERATION_SELECT_TEMPLATE
 )
+
+# ruff: noqa: E501
 SPARQL_QA_TEMPLATE = """Task: Generate a natural language response from the results of a SPARQL query.
 You are an assistant that creates well-written and human understandable answers.
 The information part contains the information provided, which you can use to construct an answer.

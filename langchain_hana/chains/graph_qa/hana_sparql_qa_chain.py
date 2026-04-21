@@ -5,11 +5,11 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from langchain_classic.chains.base import Chain
-from langchain_core.runnables import Runnable
-from langchain_core.output_parsers import StrOutputParser
 from langchain_core.callbacks.manager import CallbackManagerForChainRun
 from langchain_core.language_models import BaseLanguageModel
+from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts.base import BasePromptTemplate
+from langchain_core.runnables import Runnable
 from pydantic import Field
 
 from langchain_hana.graphs import HanaRdfGraph
@@ -157,10 +157,10 @@ class HanaSparqlQAChain(Chain):
         # Generate SPARQL query from the question and schema
         generated_sparql = self.sparql_generation_chain.invoke(
             {
-                "prompt": question, 
-                "schema": self.graph.get_schema.serialize(format="turtle")
-            }, 
-            callbacks=callbacks
+                "prompt": question,
+                "schema": self.graph.get_schema.serialize(format="turtle"),
+            },
+            callbacks=callbacks,
         )
 
         # Log the generated SPARQL
