@@ -44,7 +44,7 @@ def test_int_sanitation_with_illegal_negative_value() -> None:
     assert successful
 
 
-def dummy_similarity_search(query, k=4):
+def dummy_similarity_search(query: str, k: int = 4) -> str:
     _validate_k(k)
     return f"Query: {query}, k={k}"
 
@@ -57,7 +57,9 @@ def dummy_similarity_search(query, k=4):
         ("cherry", 2, "Query: cherry, k=2"),
     ],
 )
-def test_similarity_search_valid(query, k, expected):
+def test_similarity_search_valid(
+    query: str, k: int | None, expected: str
+) -> None:
     if k is None:
         result = dummy_similarity_search(query)
     else:
@@ -72,12 +74,14 @@ def test_similarity_search_valid(query, k, expected):
         ("mango", -1),
     ],
 )
-def test_similarity_search_invalid(query, k):
+def test_similarity_search_invalid(query: str, k: int) -> None:
     with pytest.raises(ValueError, match="must be an integer greater than 0"):
         dummy_similarity_search(query, k=k)
 
 
-def dummy_max_marginal_relevance_search(query, k=4, fetch_k=10):
+def dummy_max_marginal_relevance_search(
+    query: str, k: int = 4, fetch_k: int = 10
+) -> str:
     _validate_k_and_fetch_k(k, fetch_k)
     return f"Query: {query}, k={k}, fetch_k={fetch_k}"
 
@@ -90,13 +94,15 @@ def dummy_max_marginal_relevance_search(query, k=4, fetch_k=10):
         ("cherry", 2, 2, "Query: cherry, k=2, fetch_k=2"),
     ],
 )
-def test_max_marginal_relevance_search_valid(query, k, fetch_k, expected):
+def test_max_marginal_relevance_search_valid(
+    query: str, k: int | None, fetch_k: int | None, expected: str
+) -> None:
     if k is None and fetch_k is None:
         result = dummy_max_marginal_relevance_search(query)
     elif fetch_k is None:
-        result = dummy_max_marginal_relevance_search(query, k)
+        result = dummy_max_marginal_relevance_search(query, k)  # type: ignore[arg-type]
     else:
-        result = dummy_max_marginal_relevance_search(query, k, fetch_k)
+        result = dummy_max_marginal_relevance_search(query, k, fetch_k)  # type: ignore[arg-type]
     assert result == expected
 
 
@@ -108,6 +114,8 @@ def test_max_marginal_relevance_search_valid(query, k, fetch_k, expected):
         ("grape", 5, 3, "greater than or equal to 'k'"),
     ],
 )
-def test_max_marginal_relevance_search_invalid(query, k, fetch_k, match):
+def test_max_marginal_relevance_search_invalid(
+    query: str, k: int, fetch_k: int, match: str
+) -> None:
     with pytest.raises(ValueError, match=match):
         dummy_max_marginal_relevance_search(query, k=k, fetch_k=fetch_k)

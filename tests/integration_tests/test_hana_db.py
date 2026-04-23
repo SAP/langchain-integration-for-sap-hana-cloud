@@ -1,7 +1,7 @@
 """Test HANA vectorstore functionality."""
 
 import os
-from typing import Any, Dict, List
+from typing import Any, Dict, Generator, List
 
 import numpy as np
 import pytest
@@ -42,9 +42,9 @@ embedding = NormalizedFakeEmbeddings()
 
 
 class Config:
-    def __init__(self):  # type: ignore[no-untyped-def]
-        self.conn = None
-        self.schema_name = ""
+    def __init__(self) -> None:
+        self.conn: dbapi.Connection
+        self.schema_name: str = ""
 
 
 config = Config()
@@ -55,22 +55,22 @@ config = Config()
     params=[None, "memoryview", "list", "tuple"],
     ids=["default", "memoryview", "list", "tuple"],
 )
-def vectoroutputtype_param(request):  # type: ignore[no-untyped-def]
+def vectoroutputtype_param(request: pytest.FixtureRequest) -> str | None:
     """Parametrize vectoroutputtype values for testing."""
     return request.param
 
 
 @pytest.fixture(scope="module", autouse=True)
-def setup_connection(vectoroutputtype_param):  # type: ignore[no-untyped-def]
+def setup_connection(
+    vectoroutputtype_param: str | None,
+) -> Generator[None, None, None]:
     """Setup connection with specific vectoroutputtype parameter."""
     # Build connection parameters
-    conn_params = {
+    conn_params: dict[str, Any] = {
         "address": os.environ["HANA_DB_ADDRESS"],
-        "port": os.environ["HANA_DB_PORT"],
+        "port": int(os.environ["HANA_DB_PORT"]),
         "user": os.environ["HANA_DB_USER"],
         "password": os.environ["HANA_DB_PASSWORD"],
-        "autocommit": True,
-        "sslValidateCertificate": False,
     }
 
     # Only add vectoroutputtype if it's not None (to test default behavior)
@@ -91,7 +91,7 @@ def setup_connection(vectoroutputtype_param):  # type: ignore[no-untyped-def]
 
 
 @pytest.fixture(params=["REAL_VECTOR", "HALF_VECTOR"])
-def vectorDB(request):
+def vectorDB(request: pytest.FixtureRequest) -> Generator[HanaDB, None, None]:
     vectorDB = HanaDB(
         connection=config.conn,
         embedding=embedding,
@@ -105,7 +105,7 @@ def vectorDB(request):
 
 
 @pytest.fixture
-def table_name_with_cleanup():
+def table_name_with_cleanup() -> Generator[str, None, None]:
     yield HanaTestConstants.TABLE_NAME_CUSTOM_DB
     HanaTestUtils.drop_table(config.conn, HanaTestConstants.TABLE_NAME_CUSTOM_DB)
 
@@ -121,7 +121,7 @@ def table_name_with_cleanup():
     ],
     ids=["no_rerank", "with_rerank", "with_rerank_and_rank_fields"],
 )
-def rerank_config_param(request):  # type: ignore[no-untyped-def]
+def rerank_config_param(request: pytest.FixtureRequest) -> dict[str, Any] | None:
     """Parametrize rerank_config for similarity search tests."""
     return request.param
 
@@ -165,17 +165,19 @@ def build_rerank_config(
         "rank_fields_not_str",
     ],
 )
-def invalid_rerank_config_with_error_message(request):
+def invalid_rerank_config_with_error_message(
+    request: pytest.FixtureRequest,
+) -> tuple[dict[str, Any], str]:
     return request.param
 
 
 @pytest.fixture
-def invalid_rerank_config_non_existent_model_id():
+def invalid_rerank_config_non_existent_model_id() -> dict[str, str]:
     return {"query": "test_query", "model_id": "non_existing_model"}
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_non_existing_table(table_name_with_cleanup) -> None:
+def test_hanavector_non_existing_table(table_name_with_cleanup: str) -> None:
     """Test end to end construction and search."""
     table_name = table_name_with_cleanup
 
@@ -191,7 +193,7 @@ def test_hanavector_non_existing_table(table_name_with_cleanup) -> None:
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_table_with_missing_columns(table_name_with_cleanup) -> None:
+def test_hanavector_table_with_missing_columns(table_name_with_cleanup: str) -> None:
     table_name = table_name_with_cleanup
     try:
         cur = config.conn.cursor()
@@ -216,7 +218,7 @@ def test_hanavector_table_with_missing_columns(table_name_with_cleanup) -> None:
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_table_with_nvarchar_content(table_name_with_cleanup) -> None:
+def test_hanavector_table_with_nvarchar_content(table_name_with_cleanup: str) -> None:
     table_name = table_name_with_cleanup
     content_column = "TEST_TEXT"
     metadata_column = "TEST_META"
@@ -256,7 +258,9 @@ def test_hanavector_table_with_nvarchar_content(table_name_with_cleanup) -> None
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_table_with_wrong_typed_columns(table_name_with_cleanup) -> None:
+def test_hanavector_table_with_wrong_typed_columns(
+    table_name_with_cleanup: str,
+) -> None:
     table_name = table_name_with_cleanup
     content_column = "DOC_TEXT"
     metadata_column = "DOC_META"
@@ -289,7 +293,7 @@ def test_hanavector_table_with_wrong_typed_columns(table_name_with_cleanup) -> N
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_non_existing_table_fixed_vector_length(
-    table_name_with_cleanup,
+    table_name_with_cleanup: str,
 ) -> None:
     """Test end to end construction and search."""
     table_name = table_name_with_cleanup
@@ -308,12 +312,12 @@ def test_hanavector_non_existing_table_fixed_vector_length(
 
     assert vectordb._table_exists(table_name)
     vectordb._check_column(
-        table_name, vector_column, "REAL_VECTOR", vector_column_length
+        table_name, vector_column, ["REAL_VECTOR"], vector_column_length
     )
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_add_texts(vectorDB) -> None:
+def test_hanavector_add_texts(vectorDB: HanaDB) -> None:
     vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
 
     # check that embeddings have been created in the table
@@ -329,7 +333,7 @@ def test_hanavector_add_texts(vectorDB) -> None:
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_add_texts_with_map_merge(vectorDB) -> None:
+def test_hanavector_add_texts_with_map_merge(vectorDB: HanaDB) -> None:
     with pytest.raises(
         ValueError, match="map merge cannot be used with external embeddings"
     ):
@@ -337,7 +341,7 @@ def test_hanavector_add_texts_with_map_merge(vectorDB) -> None:
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_from_texts(table_name_with_cleanup) -> None:
+def test_hanavector_from_texts(table_name_with_cleanup: str) -> None:
     table_name = table_name_with_cleanup
     vectorDB = HanaDB.from_texts(
         connection=config.conn,
@@ -362,7 +366,7 @@ def test_hanavector_from_texts(table_name_with_cleanup) -> None:
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_from_texts_with_map_merge(table_name_with_cleanup) -> None:
+def test_hanavector_from_texts_with_map_merge(table_name_with_cleanup: str) -> None:
     with pytest.raises(
         ValueError, match="map merge cannot be used with external embeddings"
     ):
@@ -377,7 +381,9 @@ def test_hanavector_from_texts_with_map_merge(table_name_with_cleanup) -> None:
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_similarity_search_simple(vectorDB, rerank_config_param) -> None:
+def test_hanavector_similarity_search_simple(
+    vectorDB: HanaDB, rerank_config_param: dict[str, Any] | None
+) -> None:
     vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
     rerank_config = build_rerank_config(rerank_config_param, top_n=1)
 
@@ -397,14 +403,15 @@ def test_hanavector_similarity_search_simple(vectorDB, rerank_config_param) -> N
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 @pytest.mark.parametrize("k", [0, -4])
-def test_hanavector_similarity_search_simple_invalid(vectorDB, k: int) -> None:
+def test_hanavector_similarity_search_simple_invalid(vectorDB: HanaDB, k: int) -> None:
     with pytest.raises(ValueError, match="must be an integer greater than 0"):
         vectorDB.similarity_search(HanaTestConstants.TEXTS[0], k)
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_simple_invalid_rerank_config(
-    vectorDB, invalid_rerank_config_with_error_message
+    vectorDB: HanaDB,
+    invalid_rerank_config_with_error_message: tuple[dict[str, Any], str],
 ) -> None:
     invalid_rerank_config, expected_error_message = (
         invalid_rerank_config_with_error_message
@@ -417,7 +424,7 @@ def test_hanavector_similarity_search_simple_invalid_rerank_config(
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_simple_invalid_rerank_model_id(
-    vectorDB, invalid_rerank_config_non_existent_model_id
+    vectorDB: HanaDB, invalid_rerank_config_non_existent_model_id: dict[str, str]
 ) -> None:
     with pytest.raises(dbapi.Error):
         vectorDB.similarity_search(
@@ -429,7 +436,7 @@ def test_hanavector_similarity_search_simple_invalid_rerank_model_id(
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_by_vector_simple(
-    vectorDB, rerank_config_param
+    vectorDB: HanaDB, rerank_config_param: dict[str, Any] | None
 ) -> None:
     vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
     rerank_config = build_rerank_config(
@@ -454,7 +461,7 @@ def test_hanavector_similarity_search_by_vector_simple(
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 @pytest.mark.parametrize("k", [0, -4])
 def test_hanavector_similarity_search_by_vector_simple_invalid(
-    vectorDB, k: int
+    vectorDB: HanaDB, k: int
 ) -> None:
     vector = embedding.embed_query(HanaTestConstants.TEXTS[0])
     with pytest.raises(ValueError, match="must be an integer greater than 0"):
@@ -463,7 +470,8 @@ def test_hanavector_similarity_search_by_vector_simple_invalid(
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_by_vector_simple_invalid_rerank_config(
-    vectorDB, invalid_rerank_config_with_error_message
+    vectorDB: HanaDB,
+    invalid_rerank_config_with_error_message: tuple[dict[str, Any], str],
 ) -> None:
     invalid_rerank_config, expected_error_message = (
         invalid_rerank_config_with_error_message
@@ -480,7 +488,8 @@ def test_hanavector_similarity_search_by_vector_simple_invalid_rerank_config(
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_by_vector_simple_invalid_rerank_model_id(
-    vectorDB, invalid_rerank_config_non_existent_model_id
+    vectorDB: HanaDB,
+    invalid_rerank_config_non_existent_model_id: dict[str, str],
 ) -> None:
     with pytest.raises(dbapi.Error):
         vectorDB.similarity_search_by_vector(
@@ -492,7 +501,8 @@ def test_hanavector_similarity_search_by_vector_simple_invalid_rerank_model_id(
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_simple_euclidean_distance(
-    table_name_with_cleanup, rerank_config_param
+    table_name_with_cleanup: str,
+    rerank_config_param: dict[str, Any] | None,
 ) -> None:
     table_name = table_name_with_cleanup
     rerank_config = build_rerank_config(rerank_config_param, top_n=1)
@@ -522,7 +532,8 @@ def test_hanavector_similarity_search_simple_euclidean_distance(
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_simple_euclidean_distance_invalid_rerank_config(
-    table_name_with_cleanup, invalid_rerank_config_with_error_message
+    table_name_with_cleanup: str,
+    invalid_rerank_config_with_error_message: tuple[dict[str, Any], str],
 ) -> None:
     table_name = table_name_with_cleanup
     invalid_rerank_config, expected_error_message = (
@@ -546,7 +557,8 @@ def test_hanavector_similarity_search_simple_euclidean_distance_invalid_rerank_c
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_simple_euclidean_distance_invalid_rerank_model_id(
-    table_name_with_cleanup, invalid_rerank_config_non_existent_model_id
+    table_name_with_cleanup: str,
+    invalid_rerank_config_non_existent_model_id: dict[str, str],
 ) -> None:
     table_name = table_name_with_cleanup
 
@@ -569,7 +581,7 @@ def test_hanavector_similarity_search_simple_euclidean_distance_invalid_rerank_m
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_with_metadata(
-    vectorDB, rerank_config_param
+    vectorDB: HanaDB, rerank_config_param: dict[str, Any] | None
 ) -> None:
     vectorDB.add_texts(
         texts=HanaTestConstants.TEXTS, metadatas=HanaTestConstants.METADATAS
@@ -590,7 +602,8 @@ def test_hanavector_similarity_search_with_metadata(
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_with_metadata_invalid_rerank_config(
-    vectorDB, invalid_rerank_config_with_error_message
+    vectorDB: HanaDB,
+    invalid_rerank_config_with_error_message: tuple[dict[str, Any], str],
 ) -> None:
     invalid_rerank_config, expected_error_message = (
         invalid_rerank_config_with_error_message
@@ -604,7 +617,8 @@ def test_hanavector_similarity_search_with_metadata_invalid_rerank_config(
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_with_metadata_invalid_rerank_model_id(
-    vectorDB, invalid_rerank_config_non_existent_model_id
+    vectorDB: HanaDB,
+    invalid_rerank_config_non_existent_model_id: dict[str, str],
 ) -> None:
     with pytest.raises(dbapi.Error):
         vectorDB.similarity_search(
@@ -616,7 +630,7 @@ def test_hanavector_similarity_search_with_metadata_invalid_rerank_model_id(
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_with_metadata_filter(
-    vectorDB, rerank_config_param
+    vectorDB: HanaDB, rerank_config_param: dict[str, Any] | None
 ) -> None:
     vectorDB.add_texts(
         texts=HanaTestConstants.TEXTS, metadatas=HanaTestConstants.METADATAS
@@ -657,7 +671,8 @@ def test_hanavector_similarity_search_with_metadata_filter(
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_with_metadata_filter_invalid_rerank_config(
-    vectorDB, invalid_rerank_config_with_error_message
+    vectorDB: HanaDB,
+    invalid_rerank_config_with_error_message: tuple[dict[str, Any], str],
 ) -> None:
     invalid_rerank_config, expected_error_message = (
         invalid_rerank_config_with_error_message
@@ -674,7 +689,8 @@ def test_hanavector_similarity_search_with_metadata_filter_invalid_rerank_config
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_with_metadata_filter_invalid_rerank_model_id(
-    vectorDB, invalid_rerank_config_non_existent_model_id
+    vectorDB: HanaDB,
+    invalid_rerank_config_non_existent_model_id: dict[str, str],
 ) -> None:
     with pytest.raises(dbapi.Error):
         vectorDB.similarity_search(
@@ -687,7 +703,7 @@ def test_hanavector_similarity_search_with_metadata_filter_invalid_rerank_model_
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_with_metadata_filter_string(
-    vectorDB, rerank_config_param
+    vectorDB: HanaDB, rerank_config_param: dict[str, Any] | None
 ) -> None:
     vectorDB.add_texts(
         texts=HanaTestConstants.TEXTS, metadatas=HanaTestConstants.METADATAS
@@ -707,7 +723,8 @@ def test_hanavector_similarity_search_with_metadata_filter_string(
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_with_metadata_filter_string_invalid_rerank_config(
-    vectorDB, invalid_rerank_config_with_error_message
+    vectorDB: HanaDB,
+    invalid_rerank_config_with_error_message: tuple[dict[str, Any], str],
 ) -> None:
     invalid_rerank_config, expected_error_message = (
         invalid_rerank_config_with_error_message
@@ -724,7 +741,8 @@ def test_hanavector_similarity_search_with_metadata_filter_string_invalid_rerank
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_with_metadata_filter_string_invalid_rerank_model_id(  # noqa: E501
-    vectorDB, invalid_rerank_config_non_existent_model_id
+    vectorDB: HanaDB,
+    invalid_rerank_config_non_existent_model_id: dict[str, str],
 ) -> None:
     with pytest.raises(dbapi.Error):
         vectorDB.similarity_search(
@@ -737,7 +755,7 @@ def test_hanavector_similarity_search_with_metadata_filter_string_invalid_rerank
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_with_metadata_filter_bool(
-    vectorDB, rerank_config_param
+    vectorDB: HanaDB, rerank_config_param: dict[str, Any] | None
 ) -> None:
     vectorDB.add_texts(
         texts=HanaTestConstants.TEXTS, metadatas=HanaTestConstants.METADATAS
@@ -757,7 +775,8 @@ def test_hanavector_similarity_search_with_metadata_filter_bool(
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_with_metadata_filter_bool_invalid_rerank_config(
-    vectorDB, invalid_rerank_config_with_error_message
+    vectorDB: HanaDB,
+    invalid_rerank_config_with_error_message: tuple[dict[str, Any], str],
 ) -> None:
     invalid_rerank_config, expected_error_message = (
         invalid_rerank_config_with_error_message
@@ -774,7 +793,8 @@ def test_hanavector_similarity_search_with_metadata_filter_bool_invalid_rerank_c
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_with_metadata_filter_bool_invalid_rerank_model_id(
-    vectorDB, invalid_rerank_config_non_existent_model_id
+    vectorDB: HanaDB,
+    invalid_rerank_config_non_existent_model_id: dict[str, str],
 ) -> None:
     with pytest.raises(dbapi.Error):
         vectorDB.similarity_search(
@@ -787,7 +807,7 @@ def test_hanavector_similarity_search_with_metadata_filter_bool_invalid_rerank_m
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_with_metadata_filter_invalid_type(
-    vectorDB,
+    vectorDB: HanaDB,
 ) -> None:
     vectorDB.add_texts(
         texts=HanaTestConstants.TEXTS, metadatas=HanaTestConstants.METADATAS
@@ -804,7 +824,9 @@ def test_hanavector_similarity_search_with_metadata_filter_invalid_type(
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_similarity_search_with_score(vectorDB, rerank_config_param) -> None:
+def test_hanavector_similarity_search_with_score(
+    vectorDB: HanaDB, rerank_config_param: dict[str, Any] | None
+) -> None:
     vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
     rerank_config = build_rerank_config(rerank_config_param, top_n=3)
 
@@ -826,7 +848,8 @@ def test_hanavector_similarity_search_with_score(vectorDB, rerank_config_param) 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_with_score_invalid_rerank_config(
-    vectorDB, invalid_rerank_config_with_error_message
+    vectorDB: HanaDB,
+    invalid_rerank_config_with_error_message: tuple[dict[str, Any], str],
 ) -> None:
     invalid_rerank_config, expected_error_message = (
         invalid_rerank_config_with_error_message
@@ -840,7 +863,8 @@ def test_hanavector_similarity_search_with_score_invalid_rerank_config(
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_with_score_invalid_rerank_model_id(
-    vectorDB, invalid_rerank_config_non_existent_model_id
+    vectorDB: HanaDB,
+    invalid_rerank_config_non_existent_model_id: dict[str, str],
 ) -> None:
     with pytest.raises(dbapi.Error):
         vectorDB.similarity_search_with_score(
@@ -851,7 +875,7 @@ def test_hanavector_similarity_search_with_score_invalid_rerank_model_id(
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_similarity_search_with_relevance_score(vectorDB) -> None:
+def test_hanavector_similarity_search_with_relevance_score(vectorDB: HanaDB) -> None:
     vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
 
     search_result = vectorDB.similarity_search_with_relevance_scores(
@@ -867,7 +891,7 @@ def test_hanavector_similarity_search_with_relevance_score(vectorDB) -> None:
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_with_relevance_score_with_euclidian_distance(
-    table_name_with_cleanup,
+    table_name_with_cleanup: str,
 ) -> None:
     table_name = table_name_with_cleanup
 
@@ -893,7 +917,8 @@ def test_hanavector_similarity_search_with_relevance_score_with_euclidian_distan
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_with_score_with_euclidian_distance(
-    table_name_with_cleanup, rerank_config_param
+    table_name_with_cleanup: str,
+    rerank_config_param: dict[str, Any] | None,
 ) -> None:
     table_name = table_name_with_cleanup
     rerank_config = build_rerank_config(rerank_config_param, top_n=3)
@@ -927,7 +952,7 @@ def test_hanavector_similarity_search_with_score_with_euclidian_distance(
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_delete_with_filter(vectorDB) -> None:
+def test_hanavector_delete_with_filter(vectorDB: HanaDB) -> None:
     vectorDB.add_texts(
         texts=HanaTestConstants.TEXTS, metadatas=HanaTestConstants.METADATAS
     )
@@ -944,7 +969,7 @@ def test_hanavector_delete_with_filter(vectorDB) -> None:
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 async def test_hanavector_delete_with_filter_async(
-    vectorDB,
+    vectorDB: HanaDB,
 ) -> None:
     vectorDB.add_texts(
         texts=HanaTestConstants.TEXTS, metadatas=HanaTestConstants.METADATAS
@@ -961,8 +986,7 @@ async def test_hanavector_delete_with_filter_async(
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_delete_all_with_empty_filter(
-    vectorDB,
+def test_hanavector_delete_all_with_empty_filter(vectorDB: HanaDB,
 ) -> None:
     vectorDB.add_texts(
         texts=HanaTestConstants.TEXTS, metadatas=HanaTestConstants.METADATAS
@@ -979,7 +1003,7 @@ def test_hanavector_delete_all_with_empty_filter(
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_delete_called_wrong(vectorDB) -> None:
+def test_hanavector_delete_called_wrong(vectorDB: HanaDB) -> None:
     vectorDB.add_texts(
         texts=HanaTestConstants.TEXTS, metadatas=HanaTestConstants.METADATAS
     )
@@ -1002,7 +1026,7 @@ def test_hanavector_delete_called_wrong(vectorDB) -> None:
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_max_marginal_relevance_search(vectorDB) -> None:
+def test_hanavector_max_marginal_relevance_search(vectorDB: HanaDB) -> None:
     vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
 
     search_result = vectorDB.max_marginal_relevance_search(
@@ -1024,14 +1048,14 @@ def test_hanavector_max_marginal_relevance_search(vectorDB) -> None:
     ],
 )
 def test_hanavector_max_marginal_relevance_search_invalid(
-    vectorDB, k: int, fetch_k: int, error_msg: str
+    vectorDB: HanaDB, k: int, fetch_k: int, error_msg: str
 ) -> None:
     with pytest.raises(ValueError, match=error_msg):
         vectorDB.max_marginal_relevance_search(HanaTestConstants.TEXTS[0], k, fetch_k)
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_max_marginal_relevance_search_vector(vectorDB) -> None:
+def test_hanavector_max_marginal_relevance_search_vector(vectorDB: HanaDB) -> None:
     vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
 
     search_result = vectorDB.max_marginal_relevance_search_by_vector(
@@ -1045,7 +1069,7 @@ def test_hanavector_max_marginal_relevance_search_vector(vectorDB) -> None:
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 async def test_hanavector_max_marginal_relevance_search_async(
-    vectorDB,
+    vectorDB: HanaDB,
 ) -> None:
     vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
 
@@ -1068,7 +1092,7 @@ async def test_hanavector_max_marginal_relevance_search_async(
     ],
 )
 async def test_hanavector_max_marginal_relevance_search_async_invalid(
-    vectorDB, k: int, fetch_k: int, error_msg: str
+    vectorDB: HanaDB, k: int, fetch_k: int, error_msg: str
 ) -> None:
     with pytest.raises(ValueError, match=error_msg):
         await vectorDB.amax_marginal_relevance_search(
@@ -1078,7 +1102,7 @@ async def test_hanavector_max_marginal_relevance_search_async_invalid(
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_filter_prepared_statement_params(
-    vectorDB,
+    vectorDB: HanaDB,
 ) -> None:
     vectorDB.add_texts(
         texts=HanaTestConstants.TEXTS, metadatas=HanaTestConstants.METADATAS
@@ -1098,7 +1122,7 @@ def test_hanavector_filter_prepared_statement_params(
         f"SELECT * FROM {HanaTestConstants.TABLE_NAME} "
         "WHERE JSON_VALUE(VEC_META, '$.start') = ?"
     )
-    cur.execute(sql_str, (query_value))
+    cur.execute(sql_str, (query_value,))
     rows = cur.fetchall()
     assert len(rows) == 1
 
@@ -1115,7 +1139,7 @@ def test_hanavector_filter_prepared_statement_params(
         f"SELECT * FROM {HanaTestConstants.TABLE_NAME} "
         "WHERE JSON_VALUE(VEC_META, '$.quality') = ?"
     )
-    cur.execute(sql_str, (query_value))
+    cur.execute(sql_str, (query_value,))
     rows = cur.fetchall()
     assert len(rows) == 1
 
@@ -1133,7 +1157,7 @@ def test_hanavector_filter_prepared_statement_params(
         f"SELECT * FROM {HanaTestConstants.TABLE_NAME} "
         "WHERE JSON_VALUE(VEC_META, '$.ready') = ?"
     )
-    cur.execute(sql_str, (query_value))
+    cur.execute(sql_str, (query_value,))
     rows = cur.fetchall()
     assert len(rows) == 3
 
@@ -1143,12 +1167,12 @@ def test_hanavector_filter_prepared_statement_params(
         f"SELECT * FROM {HanaTestConstants.TABLE_NAME} "
         "WHERE JSON_VALUE(VEC_META, '$.ready') = ?"
     )
-    cur.execute(sql_str, (query_value))
+    cur.execute(sql_str, (query_value,))
     rows = cur.fetchall()
     assert len(rows) == 1
 
 
-def test_invalid_metadata_keys(table_name_with_cleanup) -> None:
+def test_invalid_metadata_keys(table_name_with_cleanup: str) -> None:
     table_name = table_name_with_cleanup
 
     invalid_metadatas = [
@@ -1236,7 +1260,7 @@ def test_hanavector_with_with_metadata_filters(
     expected_ids: List[int],
     expected_where_clause: str,
     expected_where_clause_parameters: List[Any],
-    vectorDB,  # Fixture
+    vectorDB: HanaDB,
 ) -> None:
     # Delete already existing documents from the table
     vectorDB.delete(filter={})
@@ -1250,7 +1274,7 @@ def test_hanavector_with_with_metadata_filters(
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_preexisting_specific_columns_for_metadata_fill(
-    table_name_with_cleanup,
+    table_name_with_cleanup: str,
 ) -> None:
     table_name = table_name_with_cleanup
 
@@ -1311,7 +1335,7 @@ def test_preexisting_specific_columns_for_metadata_fill(
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_preexisting_specific_columns_for_metadata_via_array(
-    table_name_with_cleanup,
+    table_name_with_cleanup: str,
 ) -> None:
     table_name = table_name_with_cleanup
 
@@ -1383,7 +1407,7 @@ def test_preexisting_specific_columns_for_metadata_via_array(
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_preexisting_specific_columns_for_metadata_multiple_columns(
-    table_name_with_cleanup,
+    table_name_with_cleanup: str,
 ) -> None:
     table_name = table_name_with_cleanup
 
@@ -1432,7 +1456,7 @@ def test_preexisting_specific_columns_for_metadata_multiple_columns(
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_preexisting_specific_columns_for_metadata_empty_columns(
-    table_name_with_cleanup,
+    table_name_with_cleanup: str,
 ) -> None:
     table_name = table_name_with_cleanup
 
@@ -1485,7 +1509,7 @@ def test_preexisting_specific_columns_for_metadata_empty_columns(
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_preexisting_specific_columns_for_metadata_wrong_type_or_non_existing(
-    table_name_with_cleanup,
+    table_name_with_cleanup: str,
 ) -> None:
     table_name = table_name_with_cleanup
 
@@ -1536,7 +1560,7 @@ def test_preexisting_specific_columns_for_metadata_wrong_type_or_non_existing(
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_preexisting_specific_columns_for_returned_metadata_completeness(
-    table_name_with_cleanup,
+    table_name_with_cleanup: str,
 ) -> None:
     table_name = table_name_with_cleanup
 
@@ -1576,7 +1600,7 @@ def test_preexisting_specific_columns_for_returned_metadata_completeness(
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_create_hnsw_index_with_default_values(vectorDB) -> None:
+def test_create_hnsw_index_with_default_values(vectorDB: HanaDB) -> None:
     vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
 
     # Test the creation of HNSW index
@@ -1596,7 +1620,7 @@ def test_create_hnsw_index_with_default_values(vectorDB) -> None:
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_create_hnsw_index_with_defined_values(table_name_with_cleanup) -> None:
+def test_create_hnsw_index_with_defined_values(table_name_with_cleanup: str) -> None:
     table_name = table_name_with_cleanup
 
     # Create table and insert data
@@ -1627,7 +1651,7 @@ def test_create_hnsw_index_with_defined_values(table_name_with_cleanup) -> None:
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_create_hnsw_index_after_initialization(vectorDB) -> None:
+def test_create_hnsw_index_after_initialization(vectorDB: HanaDB) -> None:
     # Create HNSW index before adding documents
     vectorDB.create_hnsw_index(
         index_name="index_pre_add", ef_search=400, m=50, ef_construction=150
@@ -1646,7 +1670,7 @@ def test_create_hnsw_index_after_initialization(vectorDB) -> None:
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_duplicate_hnsw_index_creation(vectorDB) -> None:
+def test_duplicate_hnsw_index_creation(vectorDB: HanaDB) -> None:
     vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
 
     # Create HNSW index for the first time
@@ -1662,7 +1686,7 @@ def test_duplicate_hnsw_index_creation(vectorDB) -> None:
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_create_hnsw_index_invalid_m_value(vectorDB) -> None:
+def test_create_hnsw_index_invalid_m_value(vectorDB: HanaDB) -> None:
     vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
 
     # Test invalid `m` value (too low)
@@ -1675,7 +1699,7 @@ def test_create_hnsw_index_invalid_m_value(vectorDB) -> None:
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_create_hnsw_index_invalid_ef_construction(vectorDB) -> None:
+def test_create_hnsw_index_invalid_ef_construction(vectorDB: HanaDB) -> None:
     vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
 
     # Test invalid `ef_construction` value (too low)
@@ -1688,7 +1712,7 @@ def test_create_hnsw_index_invalid_ef_construction(vectorDB) -> None:
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_create_hnsw_index_invalid_ef_search(vectorDB) -> None:
+def test_create_hnsw_index_invalid_ef_search(vectorDB: HanaDB) -> None:
     vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
 
     # Test invalid `ef_search` value (too low)
@@ -1701,7 +1725,7 @@ def test_create_hnsw_index_invalid_ef_search(vectorDB) -> None:
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_keyword_search(table_name_with_cleanup) -> None:
+def test_hanavector_keyword_search(table_name_with_cleanup: str) -> None:
     table_name = table_name_with_cleanup
 
     sql_str = (
@@ -1773,7 +1797,7 @@ def test_hanavector_keyword_search(table_name_with_cleanup) -> None:
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_keyword_search_unspecific_metadata_column(
-    vectorDB,
+    vectorDB: HanaDB,
 ) -> None:
     vectorDB.add_texts(
         texts=HanaTestConstants.TEXTS, metadatas=HanaTestConstants.METADATAS

@@ -12,9 +12,9 @@ from tests.integration_tests.fixtures.filtering_test_cases import (
 
 
 class MockHanaDb:
-    def __init__(self):
+    def __init__(self) -> None:
         self.metadata_column = default_metadata_column
-        self.specific_metadata_columns = []
+        self.specific_metadata_columns: list[str] = []
 
 
 def test_create_where_clause_empty_filter() -> None:

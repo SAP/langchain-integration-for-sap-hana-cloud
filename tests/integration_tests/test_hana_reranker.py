@@ -1,4 +1,5 @@
 import os
+from typing import Any, Generator
 
 import pytest
 from hdbcli import dbapi
@@ -9,37 +10,36 @@ from tests.integration_tests.hana_test_constants import HanaTestConstants
 
 
 class Config:
-    def __init__(self):  # type: ignore[no-untyped-def]
-        self.conn = None
+    def __init__(self) -> None:
+        self.conn: dbapi.Connection
 
 
 config = Config()
 
 
-def setup_module(module):  # type: ignore[no-untyped-def]
+def setup_module(module: Any) -> None:
     config.conn = dbapi.connect(
         address=os.environ["HANA_DB_ADDRESS"],
-        port=os.environ["HANA_DB_PORT"],
+        port=int(os.environ["HANA_DB_PORT"]),
         user=os.environ["HANA_DB_USER"],
         password=os.environ["HANA_DB_PASSWORD"],
     )
 
 
-def teardown_module(module):  # type: ignore[no-untyped-def]
+def teardown_module(module: Any) -> None:
     config.conn.close()
-    config.conn = None
 
 
 @pytest.fixture(scope="module")
-def reranker():
-    return HanaReranker(
+def reranker() -> Generator[HanaReranker, None, None]:
+    yield HanaReranker(
         connection=config.conn,
         model_id=os.environ["HANA_DB_RERANK_MODEL_ID"],
     )
 
 
 @pytest.fixture
-def documents():
+def documents() -> list[Document]:
     return [
         Document(page_content=text, metadata=metadata)
         for text, metadata in zip(HanaTestConstants.TEXTS, HanaTestConstants.METADATAS)
@@ -56,9 +56,17 @@ def documents():
     ],
 )
 def test_rerank(
-    reranker, documents, query, top_n, return_documents, rank_fields, expected_idx
-):
-    result = reranker.rerank(documents, query, top_n, return_documents, rank_fields)
+    reranker: HanaReranker,
+    documents: list[Document],
+    query: str,
+    top_n: int,
+    return_documents: bool,
+    rank_fields: list[str],
+    expected_idx: int,
+) -> None:
+    result = reranker.rerank(  # type: ignore[call-overload]
+        documents, query, top_n, return_documents, rank_fields
+    )
     assert result
     assert len(result) == top_n
     assert result[0][0] == expected_idx
@@ -72,7 +80,9 @@ def test_rerank(
 
 
 @pytest.mark.parametrize("invalid_top_n", [-1, 0, len(HanaTestConstants.TEXTS) + 1])
-def test_rerank_with_invalid_top_n(reranker, documents, invalid_top_n):
+def test_rerank_with_invalid_top_n(
+    reranker: HanaReranker, documents: list[Document], invalid_top_n: int
+) -> None:
     with pytest.raises(
         ValueError,
         match="top_n must be greater than 0 and less than or equal to "
@@ -81,14 +91,18 @@ def test_rerank_with_invalid_top_n(reranker, documents, invalid_top_n):
         reranker.rerank(documents, HanaTestConstants.TEXTS[0], invalid_top_n)
 
 
-def test_rerank_with_invalid_metadata_key(reranker, documents):
+def test_rerank_with_invalid_metadata_key(
+    reranker: HanaReranker, documents: list[Document]
+) -> None:
     with pytest.raises(ValueError, match="Invalid metadata key invalid-key"):
         reranker.rerank(
             documents, HanaTestConstants.TEXTS[0], rank_fields=["invalid-key"]
         )
 
 
-def test_compress_documents(reranker, documents):
+def test_compress_documents(
+    reranker: HanaReranker, documents: list[Document]
+) -> None:
     documents.append(
         Document(
             page_content="abc",

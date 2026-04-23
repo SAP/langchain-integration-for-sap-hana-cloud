@@ -7,7 +7,7 @@ import rdflib
 from langchain_hana import HanaRdfGraph
 
 
-def test_get_schema_returns_graph_not_string_issue_45():
+def test_get_schema_returns_graph_not_string_issue_45() -> None:
     """Test that verifies the fix for GitHub issue #45"""
     # Mock the database connection since this is a unit test
     mock_connection = Mock()

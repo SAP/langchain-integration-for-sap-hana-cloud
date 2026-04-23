@@ -1,7 +1,7 @@
 """Test HANA vectorstore's internal embedding functionality."""
 
 import os
-from typing import Any
+from typing import Any, Generator
 
 import pytest
 from hdbcli import dbapi
@@ -12,16 +12,18 @@ from tests.integration_tests.hana_test_utils import HanaTestUtils
 
 
 class Config:
-    def __init__(self):  # type: ignore[no-untyped-def]
-        self.conn = None
-        self.schema_name = ""
-        self.embedding = None
+    def __init__(self) -> None:
+        self.conn: dbapi.Connection
+        self.schema_name: str = ""
+        self.embedding: HanaInternalEmbeddings
 
 
 config = Config()
 
 
-def is_internal_embedding_available(connection, embedding) -> bool:
+def is_internal_embedding_available(
+    connection: dbapi.Connection, embedding: HanaInternalEmbeddings
+) -> bool:
     """
     Check if the internal embedding function is available in HANA DB.
     Returns:
@@ -117,12 +119,14 @@ def build_rerank_config(
         "rank_fields_not_str",
     ],
 )
-def invalid_rerank_config_with_error_message(request):
+def invalid_rerank_config_with_error_message(
+    request: pytest.FixtureRequest,
+) -> tuple[dict[str, Any], str]:
     return request.param
 
 
 @pytest.fixture
-def invalid_rerank_config_non_existent_model_id():
+def invalid_rerank_config_non_existent_model_id() -> dict[str, str]:
     return {"query": "test_query", "model_id": "non_existing_model"}
 
 
@@ -141,22 +145,22 @@ def invalid_rerank_config_non_existent_model_id():
     ],
     ids=["without_remote_source", "with_remote_source"],
 )
-def embedding_param(request):  # type: ignore[no-untyped-def]
+def embedding_param(request: pytest.FixtureRequest) -> dict[str, str]:
     """Parametrize embedding values for testing."""
     return request.param
 
 
 @pytest.fixture(scope="module", autouse=True)
-def setup_connection(vectoroutputtype_param, embedding_param):  # type: ignore[no-untyped-def]
+def setup_connection(
+    vectoroutputtype_param: str | None, embedding_param: dict[str, str]
+) -> Generator[None, None, None]:
     """Setup connection with specific vectoroutputtype parameter."""
     # Build connection parameters
-    conn_params = {
+    conn_params: dict[str, Any] = {
         "address": os.environ["HANA_DB_ADDRESS"],
-        "port": os.environ["HANA_DB_PORT"],
+        "port": int(os.environ["HANA_DB_PORT"]),
         "user": os.environ["HANA_DB_USER"],
         "password": os.environ["HANA_DB_PASSWORD"],
-        "autocommit": True,
-        "sslValidateCertificate": False,
     }
 
     # Only add vectoroutputtype if it's not None (to test default behavior)
@@ -184,7 +188,7 @@ def setup_connection(vectoroutputtype_param, embedding_param):  # type: ignore[n
 
 
 @pytest.fixture(params=["REAL_VECTOR", "HALF_VECTOR"])
-def vectorDB(request):
+def vectorDB(request: pytest.FixtureRequest) -> Generator[HanaDB, None, None]:
     vectorDB = HanaDB(
         connection=config.conn,
         embedding=config.embedding,
@@ -198,13 +202,13 @@ def vectorDB(request):
 
 
 @pytest.fixture
-def table_name_with_cleanup():
+def table_name_with_cleanup() -> Generator[str, None, None]:
     yield HanaTestConstants.TABLE_NAME_CUSTOM_DB
     HanaTestUtils.drop_table(config.conn, HanaTestConstants.TABLE_NAME_CUSTOM_DB)
 
 
 @pytest.mark.parametrize("use_map_merge", [False, True])
-def test_hanavector_add_texts(vectorDB, use_map_merge: bool) -> None:
+def test_hanavector_add_texts(vectorDB: HanaDB, use_map_merge: bool) -> None:
     vectorDB.add_texts(
         texts=HanaTestConstants.TEXTS,
         metadatas=HanaTestConstants.METADATAS,
@@ -223,7 +227,7 @@ def test_hanavector_add_texts(vectorDB, use_map_merge: bool) -> None:
     assert number_of_rows == number_of_texts
 
 
-def test_hanavector_add_texts_map_merge_preserves_order(vectorDB) -> None:
+def test_hanavector_add_texts_map_merge_preserves_order(vectorDB: HanaDB) -> None:
     vectorDB.add_texts(
         texts=HanaTestConstants.TEXTS,
         metadatas=HanaTestConstants.METADATAS,
@@ -241,7 +245,9 @@ def test_hanavector_add_texts_map_merge_preserves_order(vectorDB) -> None:
 
 
 @pytest.mark.parametrize("use_map_merge", [False, True])
-def test_hanavector_from_texts(table_name_with_cleanup, use_map_merge: bool) -> None:
+def test_hanavector_from_texts(
+    table_name_with_cleanup: str, use_map_merge: bool
+) -> None:
     table_name = table_name_with_cleanup
     vectorDB = HanaDB.from_texts(
         connection=config.conn,
@@ -267,7 +273,7 @@ def test_hanavector_from_texts(table_name_with_cleanup, use_map_merge: bool) -> 
 
 
 def test_hanavector_similarity_search_with_metadata_filter(
-    vectorDB, rerank_config_param
+    vectorDB: HanaDB, rerank_config_param: dict[str, Any] | None
 ) -> None:
     vectorDB.add_texts(
         texts=HanaTestConstants.TEXTS, metadatas=HanaTestConstants.METADATAS
@@ -307,7 +313,8 @@ def test_hanavector_similarity_search_with_metadata_filter(
 
 
 def test_hanavector_similarity_search_with_metadata_filter_invalid_rerank_config(
-    vectorDB, invalid_rerank_config_with_error_message
+    vectorDB: HanaDB,
+    invalid_rerank_config_with_error_message: tuple[dict[str, Any], str],
 ) -> None:
     invalid_rerank_config, expected_error_message = (
         invalid_rerank_config_with_error_message
@@ -327,7 +334,7 @@ def test_hanavector_similarity_search_with_metadata_filter_invalid_rerank_config
 
 
 def test_hanavector_similarity_search_with_metadata_filter_invalid_rerank_model_id(
-    vectorDB, invalid_rerank_config_non_existent_model_id
+    vectorDB: HanaDB, invalid_rerank_config_non_existent_model_id: dict[str, str]
 ) -> None:
     with pytest.raises(dbapi.Error):
         vectorDB.similarity_search(
@@ -338,7 +345,9 @@ def test_hanavector_similarity_search_with_metadata_filter_invalid_rerank_model_
         )
 
 
-def test_hanavector_similarity_search_simple(vectorDB, rerank_config_param) -> None:
+def test_hanavector_similarity_search_simple(
+    vectorDB: HanaDB, rerank_config_param: dict[str, Any] | None
+) -> None:
     vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
     rerank_config = build_rerank_config(rerank_config_param, top_n=1)
 
@@ -357,13 +366,14 @@ def test_hanavector_similarity_search_simple(vectorDB, rerank_config_param) -> N
 
 
 @pytest.mark.parametrize("k", [0, -4])
-def test_hanavector_similarity_search_simple_invalid(vectorDB, k: int) -> None:
+def test_hanavector_similarity_search_simple_invalid(vectorDB: HanaDB, k: int) -> None:
     with pytest.raises(ValueError, match="must be an integer greater than 0"):
         vectorDB.similarity_search(HanaTestConstants.TEXTS[0], k)
 
 
 def test_hanavector_similarity_search_simple_invalid_rerank_config(
-    vectorDB, invalid_rerank_config_with_error_message
+    vectorDB: HanaDB,
+    invalid_rerank_config_with_error_message: tuple[dict[str, Any], str],
 ) -> None:
     invalid_rerank_config, expected_error_message = (
         invalid_rerank_config_with_error_message
@@ -378,7 +388,7 @@ def test_hanavector_similarity_search_simple_invalid_rerank_config(
 
 
 def test_hanavector_similarity_search_simple_invalid_rerank_model_id(
-    vectorDB, invalid_rerank_config_non_existent_model_id
+    vectorDB: HanaDB, invalid_rerank_config_non_existent_model_id: dict[str, str]
 ) -> None:
     with pytest.raises(dbapi.Error):
         vectorDB.similarity_search(
@@ -388,7 +398,7 @@ def test_hanavector_similarity_search_simple_invalid_rerank_model_id(
         )
 
 
-def test_hanavector_max_marginal_relevance_search(vectorDB) -> None:
+def test_hanavector_max_marginal_relevance_search(vectorDB: HanaDB) -> None:
     vectorDB.add_texts(texts=HanaTestConstants.TEXTS)
 
     search_result = vectorDB.max_marginal_relevance_search(
@@ -409,7 +419,7 @@ def test_hanavector_max_marginal_relevance_search(vectorDB) -> None:
     ],
 )
 def test_hanavector_max_marginal_relevance_search_invalid(
-    vectorDB, k: int, fetch_k: int, error_msg: str
+    vectorDB: HanaDB, k: int, fetch_k: int, error_msg: str
 ) -> None:
     with pytest.raises(ValueError, match=error_msg):
         vectorDB.max_marginal_relevance_search(HanaTestConstants.TEXTS[0], k, fetch_k)
@@ -424,7 +434,7 @@ def test_hanavector_max_marginal_relevance_search_invalid(
     ],
 )
 async def test_hanavector_max_marginal_relevance_search_async_invalid(
-    vectorDB, k: int, fetch_k: int, error_msg: str
+    vectorDB: HanaDB, k: int, fetch_k: int, error_msg: str
 ) -> None:
     with pytest.raises(ValueError, match=error_msg):
         await vectorDB.amax_marginal_relevance_search(
