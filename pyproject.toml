@@ -62,6 +62,7 @@ pytest-watcher = "^0.6.3"
 
 [tool.poetry.group.lint.dependencies]
 ruff = "^0.5"
+mdformat = "^1.0.0"
 
 [tool.poetry.group.typing.dependencies]
 mypy = "^1.10"
