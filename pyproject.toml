@@ -29,6 +29,9 @@ python = "<3.13"
 version = ">=2.1.0"
 python = ">=3.13"
 
+[tool.ruff]
+extend-include = ["*.ipynb"]
+
 [tool.ruff.lint]
 select = ["E", "F", "I", "T201"]
 
