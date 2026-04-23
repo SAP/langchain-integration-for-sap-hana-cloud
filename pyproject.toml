@@ -35,6 +35,9 @@ extend-include = ["*.ipynb"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "T201"]
 
+[tool.ruff.lint.per-file-ignores]
+"examples/*.ipynb" = ["T201", "F821"]
+
 [tool.coverage.run]
 omit = ["tests/*"]
 
