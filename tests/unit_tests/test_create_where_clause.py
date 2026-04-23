@@ -1,9 +1,15 @@
-import pytest
 import re
-from typing import List, Dict, Any
-from langchain_hana.vectorstores.create_where_clause import CreateWhereClause 
+from typing import Any, Dict, List
+
+import pytest
+
+from langchain_hana.vectorstores.create_where_clause import CreateWhereClause
 from langchain_hana.vectorstores.hana_db import default_metadata_column
-from tests.integration_tests.fixtures.filtering_test_cases import ERROR_FILTERING_TEST_CASES,FILTERING_TEST_CASES
+from tests.integration_tests.fixtures.filtering_test_cases import (
+    ERROR_FILTERING_TEST_CASES,
+    FILTERING_TEST_CASES,
+)
+
 
 class MockHanaDb:
     def __init__(self):
@@ -14,11 +20,12 @@ class MockHanaDb:
 def test_create_where_clause_empty_filter() -> None:
     where_clause, parameters = CreateWhereClause(MockHanaDb())({})
     assert where_clause == ""
-    assert parameters == []
+    assert parameters == ()
 
 
 @pytest.mark.parametrize(
-    "test_filter, expected_ids, expected_where_clause, expected_where_clause_parameters",
+    "test_filter, expected_ids, expected_where_clause, "
+    "expected_where_clause_parameters",
     FILTERING_TEST_CASES,
 )
 def test_create_where_clause(
@@ -30,6 +37,7 @@ def test_create_where_clause(
     where_clause, parameters = CreateWhereClause(MockHanaDb())(test_filter)
     assert expected_where_clause == where_clause
     assert expected_where_clause_parameters == parameters
+
 
 @pytest.mark.parametrize(
     "test_filter, expected_exception_message",

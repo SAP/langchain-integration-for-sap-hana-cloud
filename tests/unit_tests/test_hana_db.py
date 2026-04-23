@@ -2,8 +2,8 @@
 
 import pytest
 
-from langchain_hana.utils import _validate_k, _validate_k_and_fetch_k
 from langchain_hana import HanaDB
+from langchain_hana.utils import _validate_k, _validate_k_and_fetch_k
 
 
 def test_int_sanitation_with_illegal_value() -> None:
@@ -111,8 +111,3 @@ def test_max_marginal_relevance_search_valid(query, k, fetch_k, expected):
 def test_max_marginal_relevance_search_invalid(query, k, fetch_k, match):
     with pytest.raises(ValueError, match=match):
         dummy_max_marginal_relevance_search(query, k=k, fetch_k=fetch_k)
-
-
-def test_parse_float_array_from_string() -> None:
-    array_as_string = "[0.1, 0.2, 0.3]"
-    assert HanaDB._parse_float_array_from_string(array_as_string) == [0.1, 0.2, 0.3]
