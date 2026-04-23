@@ -986,7 +986,8 @@ async def test_hanavector_delete_with_filter_async(
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_delete_all_with_empty_filter(vectorDB: HanaDB,
+def test_hanavector_delete_all_with_empty_filter(
+    vectorDB: HanaDB,
 ) -> None:
     vectorDB.add_texts(
         texts=HanaTestConstants.TEXTS, metadatas=HanaTestConstants.METADATAS

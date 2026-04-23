@@ -50,9 +50,7 @@ class HanaTestUtils:
             rows = cursor.fetchall()
 
             for row in rows:
-                HanaTestUtils.execute_sql(
-                    conn, f'DROP SCHEMA "{row[0]}" CASCADE'
-                )
+                HanaTestUtils.execute_sql(conn, f'DROP SCHEMA "{row[0]}" CASCADE')
         except Exception as ex:
             raise RuntimeError(f"Unable to drop old test schemas. Error: {ex}")
         finally:

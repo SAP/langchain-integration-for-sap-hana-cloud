@@ -31,7 +31,7 @@ def is_internal_embedding_available(
     """
     if embedding.model_id is None:
         return False
-    sql_params = [embedding.model_id]
+    sql_params = (embedding.model_id,)
     if not embedding.remote_source:
         sql_str = """VECTOR_EMBEDDING('test', 'QUERY', ?)"""
     else:

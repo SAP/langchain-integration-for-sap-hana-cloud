@@ -57,9 +57,7 @@ def dummy_similarity_search(query: str, k: int = 4) -> str:
         ("cherry", 2, "Query: cherry, k=2"),
     ],
 )
-def test_similarity_search_valid(
-    query: str, k: int | None, expected: str
-) -> None:
+def test_similarity_search_valid(query: str, k: int | None, expected: str) -> None:
     if k is None:
         result = dummy_similarity_search(query)
     else:

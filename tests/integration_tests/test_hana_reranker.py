@@ -100,9 +100,7 @@ def test_rerank_with_invalid_metadata_key(
         )
 
 
-def test_compress_documents(
-    reranker: HanaReranker, documents: list[Document]
-) -> None:
+def test_compress_documents(reranker: HanaReranker, documents: list[Document]) -> None:
     documents.append(
         Document(
             page_content="abc",
