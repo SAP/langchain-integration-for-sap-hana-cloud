@@ -2147,6 +2147,144 @@ docs = ["myst-parser", "pydata-sphinx-theme", "sphinx"]
 test = ["argcomplete (>=3.0.3)", "mypy (>=1.7.0)", "pre-commit", "pytest (>=7.0,<8.2)", "pytest-mock", "pytest-mypy-testing"]
 
 [[package]]
+name = "types-colorama"
+version = "0.4.15.20260408"
+description = "Typing stubs for colorama"
+optional = false
+python-versions = ">=3.10"
+groups = ["typing"]
+files = [
+    {file = "types_colorama-0.4.15.20260408-py3-none-any.whl", hash = "sha256:7327a51c760d94f7df2e8c72c275a4468c03c3abb606d23995cb37e3d24d9132"},
+    {file = "types_colorama-0.4.15.20260408.tar.gz", hash = "sha256:9a816657927489463edec1b7b47933b73fe737d37a3616bf596b7de843441032"},
+]
+
+[[package]]
+name = "types-defusedxml"
+version = "0.7.0.20260408"
+description = "Typing stubs for defusedxml"
+optional = false
+python-versions = ">=3.10"
+groups = ["typing"]
+files = [
+    {file = "types_defusedxml-0.7.0.20260408-py3-none-any.whl", hash = "sha256:2d68db82412170b91b3e490b7c118a4f4e5a27756a126e2453f629c8d514b106"},
+    {file = "types_defusedxml-0.7.0.20260408.tar.gz", hash = "sha256:f35377d59344f98b57f9bf319cff2107aac35f9e4d42f9ed6cfeeafacffadb00"},
+]
+
+[[package]]
+name = "types-docutils"
+version = "0.22.3.20260408"
+description = "Typing stubs for docutils"
+optional = false
+python-versions = ">=3.10"
+groups = ["typing"]
+files = [
+    {file = "types_docutils-0.22.3.20260408-py3-none-any.whl", hash = "sha256:2545a86966022cdf1468d430b0007eba0837be77974a7f3fafa1b04a6815d531"},
+    {file = "types_docutils-0.22.3.20260408.tar.gz", hash = "sha256:22d5d45e4e0d65a1bc8280987a73e28669bb1cc9d16b18d0afc91713d1be26da"},
+]
+
+[[package]]
+name = "types-hdbcli"
+version = "2.25.0.20260408"
+description = "Typing stubs for hdbcli"
+optional = false
+python-versions = ">=3.10"
+groups = ["typing"]
+files = [
+    {file = "types_hdbcli-2.25.0.20260408-py3-none-any.whl", hash = "sha256:4a2f241f80c7c8b34f7773a48bcc811aaf4195f098d948ecec3f51c052f465cb"},
+    {file = "types_hdbcli-2.25.0.20260408.tar.gz", hash = "sha256:62fbdcaa71b52dc3adf680722b1cfc470bd4bcba386ba9f7469918366357704a"},
+]
+
+[[package]]
+name = "types-pexpect"
+version = "4.9.0.20260408"
+description = "Typing stubs for pexpect"
+optional = false
+python-versions = ">=3.10"
+groups = ["typing"]
+files = [
+    {file = "types_pexpect-4.9.0.20260408-py3-none-any.whl", hash = "sha256:ba6699609bb6593f00ef7204efc390fd10bc14a8d632f22c8dea13f263b16fcc"},
+    {file = "types_pexpect-4.9.0.20260408.tar.gz", hash = "sha256:faedd97fc8086b224bc1966770c486ac6ec96bef07dc47cc2724fe4ae62f8f4a"},
+]
+
+[[package]]
+name = "types-psutil"
+version = "7.2.2.20260408"
+description = "Typing stubs for psutil"
+optional = false
+python-versions = ">=3.10"
+groups = ["typing"]
+files = [
+    {file = "types_psutil-7.2.2.20260408-py3-none-any.whl", hash = "sha256:0c334f6f6bc9e9c24fca5c7d1f0b6971c961a0a2e3956dc5ce704722c01f9762"},
+    {file = "types_psutil-7.2.2.20260408.tar.gz", hash = "sha256:e8053450685965b8cd52afb62569073d00ea9967ae78bb45dff5f606847f97f2"},
+]
+
+[[package]]
+name = "types-pycurl"
+version = "7.45.7.20260408"
+description = "Typing stubs for pycurl"
+optional = false
+python-versions = ">=3.10"
+groups = ["typing"]
+files = [
+    {file = "types_pycurl-7.45.7.20260408-py3-none-any.whl", hash = "sha256:f9e67638e9865a59a275ae832eeaa4d6e131e7c0c948d8a4655fbcc4c89842aa"},
+    {file = "types_pycurl-7.45.7.20260408.tar.gz", hash = "sha256:05d910f1cc038e7964d29e09d7a35a7569cead6ba4010ae12aff2103d1e1088f"},
+]
+
+[[package]]
+name = "types-pygments"
+version = "2.20.0.20260408"
+description = "Typing stubs for Pygments"
+optional = false
+python-versions = ">=3.10"
+groups = ["typing"]
+files = [
+    {file = "types_pygments-2.20.0.20260408-py3-none-any.whl", hash = "sha256:6d347d5967b5f0654b659a8b8461a870b207b7e60cd4d646bbc047f6a8db8e1e"},
+    {file = "types_pygments-2.20.0.20260408.tar.gz", hash = "sha256:e8a56a3ab1aee7f4ed8f1876d2f62c96e0f41ede52405a7d30c888f3989d8f00"},
+]
+
+[package.dependencies]
+types-docutils = "*"
+
+[[package]]
+name = "types-pyyaml"
+version = "6.0.12.20260408"
+description = "Typing stubs for PyYAML"
+optional = false
+python-versions = ">=3.10"
+groups = ["typing"]
+files = [
+    {file = "types_pyyaml-6.0.12.20260408-py3-none-any.whl", hash = "sha256:fbc42037d12159d9c801ebfcc79ebd28335a7c13b08a4cfbc6916df78fee9384"},
+    {file = "types_pyyaml-6.0.12.20260408.tar.gz", hash = "sha256:92a73f2b8d7f39ef392a38131f76b970f8c66e4c42b3125ae872b7c93b556307"},
+]
+
+[[package]]
+name = "types-regex"
+version = "2026.4.4.20260408"
+description = "Typing stubs for regex"
+optional = false
+python-versions = ">=3.10"
+groups = ["typing"]
+files = [
+    {file = "types_regex-2026.4.4.20260408-py3-none-any.whl", hash = "sha256:d436bcc409abf9b06747b7e038014afc6d40ef7b72329655c353a1955534068f"},
+    {file = "types_regex-2026.4.4.20260408.tar.gz", hash = "sha256:86b2975ff11b06e7f538839821510daea2566d9cb18bb8acde47834315409cf9"},
+]
+
+[[package]]
+name = "types-requests"
+version = "2.33.0.20260408"
+description = "Typing stubs for requests"
+optional = false
+python-versions = ">=3.10"
+groups = ["typing"]
+files = [
+    {file = "types_requests-2.33.0.20260408-py3-none-any.whl", hash = "sha256:81f31d5ea4acb39f03be7bc8bed569ba6d5a9c5d97e89f45ac43d819b68ca50f"},
+    {file = "types_requests-2.33.0.20260408.tar.gz", hash = "sha256:95b9a86376807a216b2fb412b47617b202091c3ea7c078f47cc358d5528ccb7b"},
+]
+
+[package.dependencies]
+urllib3 = ">=2"
+
+[[package]]
 name = "typing-extensions"
 version = "4.15.0"
 description = "Backported and Experimental Type Hints for Python 3.9+"
@@ -2180,7 +2318,7 @@ version = "2.6.3"
 description = "HTTP library with thread-safe connection pooling, file post, and more."
 optional = false
 python-versions = ">=3.9"
-groups = ["main"]
+groups = ["main", "typing"]
 files = [
     {file = "urllib3-2.6.3-py3-none-any.whl", hash = "sha256:bf272323e553dfb2e87d9bfd225ca7b0f467b919d7bbd355436d3fd37cb0acd4"},
     {file = "urllib3-2.6.3.tar.gz", hash = "sha256:1b62b6884944a57dbe321509ab94fd4d3b307075e0c2eae991ac71ee15ad38ed"},
@@ -2532,4 +2670,4 @@ cffi = ["cffi (>=1.17,<2.0) ; platform_python_implementation != \"PyPy\" and pyt
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10,<4.0"
-content-hash = "3d07faa0296721346955e67414eab4516737f4e28a5f2e7294acaa5c328cb8d0"
+content-hash = "6296e3e39db09d526356ae0a1e58cca897b33cc7e9bec1e9d2963d639f755607"

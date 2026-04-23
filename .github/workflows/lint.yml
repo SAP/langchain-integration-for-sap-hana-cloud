@@ -1,0 +1,36 @@
+name: Lint
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+env:
+  PYTHON_VERSION: "3.11"
+  POETRY_VERSION: "1.8.4"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python + Poetry
+        uses: "./.github/actions/poetry_setup"
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          poetry-version: ${{ env.POETRY_VERSION }}
+
+      - name: Install dependencies
+        run: poetry install --with lint,typing
+
+      - name: Lint package
+        run: make lint
+
+      - name: Lint tests
+        run: make lint_tests
+
+      - name: Lint examples
+        run: make lint_examples
