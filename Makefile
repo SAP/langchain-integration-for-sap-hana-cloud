@@ -1,4 +1,8 @@
-.PHONY: all format lint test tests integration_tests docker_tests help extended_tests
+.PHONY: all help
+.PHONY: format format_tests format_diff format_examples
+.PHONY: lint lint_tests lint_diff lint_examples
+.PHONY: test tests integration_test integration_tests test_watch
+.PHONY: check_imports
 
 # Default target executed when no arguments are given to make.
 all: help
@@ -27,17 +31,21 @@ integration_test integration_tests:
 PYTHON_FILES=langchain_hana
 MYPY_CACHE=.mypy_cache
 lint format: PYTHON_FILES=langchain_hana
-lint_diff format_diff: PYTHON_FILES=$(shell git diff  --name-only --diff-filter=d main | grep -E '\.py$$|\.ipynb$$')
-lint_package: PYTHON_FILES=langchain_hana
-lint_tests: PYTHON_FILES=tests
-lint_tests: MYPY_CACHE=.mypy_cache_test
+lint_diff format_diff: PYTHON_FILES=$(shell git diff --name-only --diff-filter=d HEAD~1 | grep -E '\.py$$|\.ipynb$$')
+lint_tests format_tests: PYTHON_FILES=tests
+lint_tests format_tests: MYPY_CACHE=.mypy_cache_test
+lint_examples format_examples: PYTHON_FILES=examples
 
-lint lint_diff lint_package lint_tests:
+lint lint_diff lint_tests:
 	[ "$(PYTHON_FILES)" = "" ] || poetry run ruff check $(PYTHON_FILES)
 	[ "$(PYTHON_FILES)" = "" ] || poetry run ruff format $(PYTHON_FILES) --diff
 	[ "$(PYTHON_FILES)" = "" ] || mkdir -p $(MYPY_CACHE) && poetry run mypy $(PYTHON_FILES) --cache-dir $(MYPY_CACHE)
 
-format format_diff:
+lint_examples:
+	[ "$(PYTHON_FILES)" = "" ] || poetry run ruff check $(PYTHON_FILES)
+	[ "$(PYTHON_FILES)" = "" ] || poetry run ruff format $(PYTHON_FILES) --diff
+
+format format_diff format_tests format_examples:
 	[ "$(PYTHON_FILES)" = "" ] || poetry run ruff format $(PYTHON_FILES)
 	[ "$(PYTHON_FILES)" = "" ] || poetry run ruff check --select I --fix $(PYTHON_FILES)
 
@@ -53,8 +61,14 @@ check_imports: $(shell find langchain_hana -name '*.py')
 help:
 	@echo '----'
 	@echo 'check_imports                          - check imports'
-	@echo 'format                                 - run code formatters (e.g., Ruff)'
-	@echo 'lint                                   - run linters'
+	@echo 'format                                 - format package code (langchain_hana)'
+	@echo 'format_tests                           - format tests/'
+	@echo 'format_diff                            - format only files changed since last commit'
+	@echo 'format_examples                        - format examples/ (notebooks)'
+	@echo 'lint                                   - lint package code (langchain_hana)'
+	@echo 'lint_tests                             - lint tests/'
+	@echo 'lint_diff                              - lint only files changed since last commit'
+	@echo 'lint_examples                          - lint examples/ (notebooks)'
 	@echo 'test                                   - run unit tests'
 	@echo 'tests                                  - alias for "test" target'
 	@echo 'test TEST_FILE=<test_file>             - run all unittests in file'
@@ -62,5 +76,3 @@ help:
 	@echo 'integration_test                       - run integration tests'
 	@echo 'integration_tests                      - alias for "integration_test" target'
 	@echo 'integration_test TEST_FILE=<test_file> - run integration tests in a file'
-	@echo 'lint_diff                              - lint only files changed since the last commit'
-	@echo 'format_diff                            - format only files changed since the last commit'

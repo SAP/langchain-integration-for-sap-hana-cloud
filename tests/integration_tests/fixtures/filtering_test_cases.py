@@ -2,7 +2,6 @@
 
 from langchain_core.documents import Document
 
-
 metadatas = [
     {
         "name": "adam",
@@ -55,54 +54,60 @@ TYPE_1_FILTERING_TEST_CASES = [
         {"id": 1},
         [1],
         "WHERE JSON_VALUE(VEC_META, '$.id') = TO_DOUBLE(?)",
-        [1],
+        (1,),
     ),
     # NULL filtering check
     (
         {"happiness": None},
         [3],
         "WHERE JSON_VALUE(VEC_META, '$.happiness') IS NULL",
-        [],
+        (),
     ),
     # String field
     (
         {"name": "adam"},
         [1],
         "WHERE JSON_VALUE(VEC_META, '$.name') = TO_NVARCHAR(?)",
-        ["adam"],
+        ("adam",),
     ),
     # String field (empty string) Issue #66
     (
         {"name": ""},
         [],
         "WHERE JSON_VALUE(VEC_META, '$.name') = TO_NVARCHAR(?)",
-        [""],
+        ("",),
     ),
     # Boolean fields
     (
         {"is_active": True},
         [1, 3],
         "WHERE JSON_VALUE(VEC_META, '$.is_active') = TO_BOOLEAN(?)",
-        ["true"],
+        ("true",),
     ),
     (
         {"is_active": False},
         [2],
         "WHERE JSON_VALUE(VEC_META, '$.is_active') = TO_BOOLEAN(?)",
-        ["false"],
+        ("false",),
     ),
     # And semantics for top level filtering
     (
         {"id": 1, "is_active": True},
         [1],
-        "WHERE (JSON_VALUE(VEC_META, '$.id') = TO_DOUBLE(?)) AND (JSON_VALUE(VEC_META, '$.is_active') = TO_BOOLEAN(?))",
-        [1, "true"],
+        (
+            "WHERE (JSON_VALUE(VEC_META, '$.id') = TO_DOUBLE(?)) "
+            "AND (JSON_VALUE(VEC_META, '$.is_active') = TO_BOOLEAN(?))"
+        ),
+        (1, "true"),
     ),
     (
         {"id": 1, "is_active": False},
         [],
-        "WHERE (JSON_VALUE(VEC_META, '$.id') = TO_DOUBLE(?)) AND (JSON_VALUE(VEC_META, '$.is_active') = TO_BOOLEAN(?))",
-        [1, "false"],
+        (
+            "WHERE (JSON_VALUE(VEC_META, '$.id') = TO_DOUBLE(?)) "
+            "AND (JSON_VALUE(VEC_META, '$.is_active') = TO_BOOLEAN(?))"
+        ),
+        (1, "false"),
     ),
 ]
 
@@ -113,162 +118,162 @@ TYPE_2_FILTERING_TEST_CASES = [
         {"id": 1},
         [1],
         "WHERE JSON_VALUE(VEC_META, '$.id') = TO_DOUBLE(?)",
-        [1],
+        (1,),
     ),
     # $eq with None value
     (
         {"happiness": {"$eq": None}},
         [3],
         "WHERE JSON_VALUE(VEC_META, '$.happiness') IS NULL",
-        [],
+        (),
     ),
     (
         {"id": {"$ne": 1}},
         [2, 3],
         "WHERE JSON_VALUE(VEC_META, '$.id') <> TO_DOUBLE(?)",
-        [1],
+        (1,),
     ),
     # $ne with None value
     (
         {"sadness": {"$ne": None}},
         [1, 2],
         "WHERE JSON_VALUE(VEC_META, '$.sadness') IS NOT NULL",
-        [],
+        (),
     ),
     (
         {"id": {"$gt": 0}},
         [1, 2, 3],
         "WHERE JSON_VALUE(VEC_META, '$.id') > TO_DOUBLE(?)",
-        [0],
+        (0,),
     ),
     (
         {"id": {"$gt": 1}},
         [2, 3],
         "WHERE JSON_VALUE(VEC_META, '$.id') > TO_DOUBLE(?)",
-        [1],
+        (1,),
     ),
     (
         {"id": {"$gte": 1}},
         [1, 2, 3],
         "WHERE JSON_VALUE(VEC_META, '$.id') >= TO_DOUBLE(?)",
-        [1],
+        (1,),
     ),
     (
         {"id": {"$lt": 1}},
         [],
         "WHERE JSON_VALUE(VEC_META, '$.id') < TO_DOUBLE(?)",
-        [1],
+        (1,),
     ),
     (
         {"id": {"$lte": 1}},
         [1],
         "WHERE JSON_VALUE(VEC_META, '$.id') <= TO_DOUBLE(?)",
-        [1],
+        (1,),
     ),
     # Repeat all the same tests with name (string column)
     (
         {"name": "adam"},
         [1],
         "WHERE JSON_VALUE(VEC_META, '$.name') = TO_NVARCHAR(?)",
-        ["adam"],
+        ("adam",),
     ),
     (
         {"name": "bob"},
         [2],
         "WHERE JSON_VALUE(VEC_META, '$.name') = TO_NVARCHAR(?)",
-        ["bob"],
+        ("bob",),
     ),
     (
         {"name": {"$eq": "adam"}},
         [1],
         "WHERE JSON_VALUE(VEC_META, '$.name') = TO_NVARCHAR(?)",
-        ["adam"],
+        ("adam",),
     ),
     (
         {"name": {"$ne": "adam"}},
         [2, 3],
         "WHERE JSON_VALUE(VEC_META, '$.name') <> TO_NVARCHAR(?)",
-        ["adam"],
+        ("adam",),
     ),
     # And also gt, gte, lt, lte relying on lexicographical ordering
     (
         {"name": {"$gt": "jane"}},
         [],
         "WHERE JSON_VALUE(VEC_META, '$.name') > TO_NVARCHAR(?)",
-        ["jane"],
+        ("jane",),
     ),
     (
         {"name": {"$gte": "jane"}},
         [3],
         "WHERE JSON_VALUE(VEC_META, '$.name') >= TO_NVARCHAR(?)",
-        ["jane"],
+        ("jane",),
     ),
     (
         {"name": {"$lt": "jane"}},
         [1, 2],
         "WHERE JSON_VALUE(VEC_META, '$.name') < TO_NVARCHAR(?)",
-        ["jane"],
+        ("jane",),
     ),
     (
         {"name": {"$lte": "jane"}},
         [1, 2, 3],
         "WHERE JSON_VALUE(VEC_META, '$.name') <= TO_NVARCHAR(?)",
-        ["jane"],
+        ("jane",),
     ),
     (
         {"is_active": {"$eq": True}},
         [1, 3],
         "WHERE JSON_VALUE(VEC_META, '$.is_active') = TO_BOOLEAN(?)",
-        ["true"],
+        ("true",),
     ),
     (
         {"is_active": {"$eq": False}},
         [2],
         "WHERE JSON_VALUE(VEC_META, '$.is_active') = TO_BOOLEAN(?)",
-        ["false"],
+        ("false",),
     ),
     (
         {"is_active": {"$ne": True}},
         [2],
         "WHERE JSON_VALUE(VEC_META, '$.is_active') <> TO_BOOLEAN(?)",
-        ["true"],
+        ("true",),
     ),
     # Test float column.
     (
         {"height": 5.7},
         [2],
         "WHERE JSON_VALUE(VEC_META, '$.height') = TO_DOUBLE(?)",
-        [5.7],
+        (5.7,),
     ),
     (
         {"height": {"$gt": 0.0}},
         [1, 2, 3],
         "WHERE JSON_VALUE(VEC_META, '$.height') > TO_DOUBLE(?)",
-        [0.0],
+        (0.0,),
     ),
     (
         {"height": {"$gt": 5.0}},
         [1, 2],
         "WHERE JSON_VALUE(VEC_META, '$.height') > TO_DOUBLE(?)",
-        [5.0],
+        (5.0,),
     ),
     (
         {"height": {"$gte": 5.0}},
         [1, 2],
         "WHERE JSON_VALUE(VEC_META, '$.height') >= TO_DOUBLE(?)",
-        [5.0],
+        (5.0,),
     ),
     (
         {"height": {"$lt": 5.0}},
         [3],
         "WHERE JSON_VALUE(VEC_META, '$.height') < TO_DOUBLE(?)",
-        [5.0],
+        (5.0,),
     ),
     (
         {"height": {"$lte": 5.8}},
         [2, 3],
         "WHERE JSON_VALUE(VEC_META, '$.height') <= TO_DOUBLE(?)",
-        [5.8],
+        (5.8,),
     ),
 ]
 
@@ -277,26 +282,39 @@ TYPE_3_FILTERING_TEST_CASES = [
     (
         {"$or": [{"id": 1}, {"id": 2}]},
         [1, 2],
-        "WHERE (JSON_VALUE(VEC_META, '$.id') = TO_DOUBLE(?)) OR (JSON_VALUE(VEC_META, '$.id') = TO_DOUBLE(?))",
-        [1, 2],
+        (
+            "WHERE (JSON_VALUE(VEC_META, '$.id') = TO_DOUBLE(?)) "
+            "OR (JSON_VALUE(VEC_META, '$.id') = TO_DOUBLE(?))"
+        ),
+        (1, 2),
     ),
     (
         {"$or": [{"id": 1}, {"name": "bob"}]},
         [1, 2],
-        "WHERE (JSON_VALUE(VEC_META, '$.id') = TO_DOUBLE(?)) OR (JSON_VALUE(VEC_META, '$.name') = TO_NVARCHAR(?))",
-        [1, "bob"],
+        (
+            "WHERE (JSON_VALUE(VEC_META, '$.id') = TO_DOUBLE(?)) "
+            "OR (JSON_VALUE(VEC_META, '$.name') = TO_NVARCHAR(?))"
+        ),
+        (1, "bob"),
     ),
     (
         {"$and": [{"id": 1}, {"id": 2}]},
         [],
-        "WHERE (JSON_VALUE(VEC_META, '$.id') = TO_DOUBLE(?)) AND (JSON_VALUE(VEC_META, '$.id') = TO_DOUBLE(?))",
-        [1, 2],
+        (
+            "WHERE (JSON_VALUE(VEC_META, '$.id') = TO_DOUBLE(?)) "
+            "AND (JSON_VALUE(VEC_META, '$.id') = TO_DOUBLE(?))"
+        ),
+        (1, 2),
     ),
     (
         {"$or": [{"id": 1}, {"id": 2}, {"id": 3}]},
         [1, 2, 3],
-        "WHERE (JSON_VALUE(VEC_META, '$.id') = TO_DOUBLE(?)) OR (JSON_VALUE(VEC_META, '$.id') = TO_DOUBLE(?)) OR (JSON_VALUE(VEC_META, '$.id') = TO_DOUBLE(?))",
-        [1, 2, 3],
+        (
+            "WHERE (JSON_VALUE(VEC_META, '$.id') = TO_DOUBLE(?)) "
+            "OR (JSON_VALUE(VEC_META, '$.id') = TO_DOUBLE(?)) "
+            "OR (JSON_VALUE(VEC_META, '$.id') = TO_DOUBLE(?))"
+        ),
+        (1, 2, 3),
     ),
 ]
 
@@ -307,19 +325,19 @@ TYPE_4_FILTERING_TEST_CASES = [
         {"id": {"$between": [1, 2]}},
         [1, 2],
         "WHERE JSON_VALUE(VEC_META, '$.id') BETWEEN TO_DOUBLE(?) AND TO_DOUBLE(?)",
-        [1, 2],
+        (1, 2),
     ),
     (
         {"id": {"$between": [1, 1]}},
         [1],
         "WHERE JSON_VALUE(VEC_META, '$.id') BETWEEN TO_DOUBLE(?) AND TO_DOUBLE(?)",
-        [1, 1],
+        (1, 1),
     ),
     (
         {"name": {"$in": ["adam", "bob"]}},
         [1, 2],
         "WHERE JSON_VALUE(VEC_META, '$.name') IN (TO_NVARCHAR(?), TO_NVARCHAR(?))",
-        ["adam", "bob"],
+        ("adam", "bob"),
     ),
 ]
 
@@ -329,7 +347,7 @@ TYPE_4B_FILTERING_TEST_CASES = [
         {"name": {"$nin": ["adam", "bob"]}},
         [3],
         "WHERE JSON_VALUE(VEC_META, '$.name') NOT IN (TO_NVARCHAR(?), TO_NVARCHAR(?))",
-        ["adam", "bob"],
+        ("adam", "bob"),
     ),
 ]
 
@@ -340,13 +358,13 @@ TYPE_5_FILTERING_TEST_CASES = [
         {"name": {"$like": "a%"}},
         [1],
         "WHERE JSON_VALUE(VEC_META, '$.name') LIKE TO_NVARCHAR(?)",
-        ["a%"],
+        ("a%",),
     ),
     (
         {"name": {"$like": "%a%"}},  # adam and jane
         [1, 3],
         "WHERE JSON_VALUE(VEC_META, '$.name') LIKE TO_NVARCHAR(?)",
-        ["%a%"],
+        ("%a%",),
     ),
 ]
 
@@ -357,69 +375,77 @@ TYPE_6_DATE_FILTERING_TEST_CASES = [
         {"date": {"type": "date", "date": "2021-01-01"}},
         [1, 3],  # adam and jane have date 2021-01-01
         "WHERE JSON_VALUE(VEC_META, '$.date') = TO_DATE(?)",
-        ["2021-01-01"],
+        ("2021-01-01",),
     ),
     # Explicit $eq with date
     (
         {"date": {"$eq": {"type": "date", "date": "2021-01-02"}}},
         [2],  # bob has date 2021-01-02
         "WHERE JSON_VALUE(VEC_META, '$.date') = TO_DATE(?)",
-        ["2021-01-02"],
+        ("2021-01-02",),
     ),
     # $ne with date
     (
         {"date": {"$ne": {"type": "date", "date": "2021-01-01"}}},
         [2],  # bob is the only one with a different date
         "WHERE JSON_VALUE(VEC_META, '$.date') <> TO_DATE(?)",
-        ["2021-01-01"],
+        ("2021-01-01",),
     ),
     # $gt with date
     (
         {"date": {"$gt": {"type": "date", "date": "2021-01-01"}}},
         [2],  # bob has date 2021-01-02
         "WHERE JSON_VALUE(VEC_META, '$.date') > TO_DATE(?)",
-        ["2021-01-01"],
+        ("2021-01-01",),
     ),
     # $gte with date
     (
         {"date": {"$gte": {"type": "date", "date": "2021-01-01"}}},
         [1, 2, 3],  # all documents
         "WHERE JSON_VALUE(VEC_META, '$.date') >= TO_DATE(?)",
-        ["2021-01-01"],
+        ("2021-01-01",),
     ),
     # $lt with date
     (
         {"date": {"$lt": {"type": "date", "date": "2021-01-02"}}},
         [1, 3],  # adam and jane
         "WHERE JSON_VALUE(VEC_META, '$.date') < TO_DATE(?)",
-        ["2021-01-02"],
+        ("2021-01-02",),
     ),
     # $lte with date
     (
         {"date": {"$lte": {"type": "date", "date": "2021-01-01"}}},
         [1, 3],  # adam and jane
         "WHERE JSON_VALUE(VEC_META, '$.date') <= TO_DATE(?)",
-        ["2021-01-01"],
+        ("2021-01-01",),
     ),
     # $between with dates
     (
-        {"date": {"$between": [
-            {"type": "date", "date": "2021-01-01"},
-            {"type": "date", "date": "2021-01-02"}
-        ]}},
+        {
+            "date": {
+                "$between": [
+                    {"type": "date", "date": "2021-01-01"},
+                    {"type": "date", "date": "2021-01-02"},
+                ]
+            }
+        },
         [1, 2, 3],  # all documents
         "WHERE JSON_VALUE(VEC_META, '$.date') BETWEEN TO_DATE(?) AND TO_DATE(?)",
-        ["2021-01-01", "2021-01-02"],
+        ("2021-01-01", "2021-01-02"),
     ),
     # $in with dates
     (
-        {"date": {"$in": [
-            {"type": "date", "date": "2021-01-01"},
-            {"type": "date", "date": "2021-01-03"}  # date that doesn't exist
-        ]}},
+        {
+            "date": {
+                "$in": [
+                    {"type": "date", "date": "2021-01-01"},
+                    {"type": "date", "date": "2021-01-03"},  # date that doesn't exist
+                ]
+            }
+        },
         [1, 3],  # adam and jane
         "WHERE JSON_VALUE(VEC_META, '$.date') IN (TO_DATE(?), TO_DATE(?))",
-        ["2021-01-01", "2021-01-03"],
+        ("2021-01-01", "2021-01-03"),
     ),
 ]
 
@@ -447,152 +473,158 @@ ERROR_FILTERING_TEST_CASES = [
     ),
     # more than one operator at the same level
     (
-      {"name": {"$eq": "adam", "$ne": "bob"}},
-      "Filter expects a single 'operator: operands' entry, but got {'$eq': 'adam', '$ne': 'bob'}"
+        {"name": {"$eq": "adam", "$ne": "bob"}},
+        (
+            "Filter expects a single 'operator: operands' entry, "
+            "but got {'$eq': 'adam', '$ne': 'bob'}"
+        ),
     ),
     # plain value is not supported (implicit $eq)
     (
         {"name": ["abcd"]},
-        "Implicit operator $eq received unsupported operand: ['abcd']"
+        "Implicit operator $eq received unsupported operand: ['abcd']",
     ),
     # # logical operators
     (
         {"$or": [{"id": 1}]},
-        "Operator $or expects at least 2 operands, but got [{'id': 1}]"
+        "Operator $or expects at least 2 operands, but got [{'id': 1}]",
     ),
-    (
-        {"$and": "adam"},
-        "Operator $and expects a list of operands, but got 'adam'"
-    ),
+    ({"$and": "adam"}, "Operator $and expects a list of operands, but got 'adam'"),
     # # contains operator
     (
         {"tags": {"$contains": ""}},
-        "Operator $contains expects a non-empty string operand, but got '' (str)"
+        "Operator $contains expects a non-empty string operand, but got '' (str)",
     ),
     (
         {"tags": {"$contains": 5}},
-        "Operator $contains expects a non-empty string operand, but got 5 (int)"
+        "Operator $contains expects a non-empty string operand, but got 5 (int)",
     ),
     (
         {"tags": {"$contains": {"unexpected": "dict"}}},
-        "Operator $contains: Operand cannot be created from {'unexpected': 'dict'}"
+        "Operator $contains: Operand cannot be created from {'unexpected': 'dict'}",
     ),
     # # like operator
     (
         {"name": {"$like": False}},
-        "Operator $like expects a string operand, but got False (bool)"
+        "Operator $like expects a string operand, but got False (bool)",
     ),
     (
         {"name": {"$like": {"unexpected": "dict"}}},
-        "Operator $like: Operand cannot be created from {'unexpected': 'dict'}"
+        "Operator $like: Operand cannot be created from {'unexpected': 'dict'}",
     ),
     # between operator
     (
         {"id": {"$between": [1]}},
-        "Operator $between expects 2 operands, but got [1 (int)]"
+        "Operator $between expects 2 operands, but got [1 (int)]",
     ),
     (
         {"id": {"$between": [1, "2"]}},
-        "Operator $between expects operands of the same type, but got [1 (int), '2' (str)]"
+        (
+            "Operator $between expects operands of the same type, "
+            "but got [1 (int), '2' (str)]"
+        ),
     ),
     (
         {"id": {"$between": [1, 2.0]}},
-        "Operator $between expects operands of the same type, but got [1 (int), 2.0 (float)]"
+        (
+            "Operator $between expects operands of the same type, "
+            "but got [1 (int), 2.0 (float)]"
+        ),
     ),
     (
         {"id": {"$between": [False, True]}},
-        "Operator $between expects operand types (int, float, str, date), but got [False (bool), True (bool)]"
+        (
+            "Operator $between expects operand types (int, float, str, date), "
+            "but got [False (bool), True (bool)]"
+        ),
     ),
     (
         {"id": {"$between": [{"unexpected": "dict"}, 2]}},
-        "Operator $between: Operand cannot be created from {'unexpected': 'dict'}"
+        "Operator $between: Operand cannot be created from {'unexpected': 'dict'}",
     ),
     # in operators
-    (
-        {"name": {"$in": []}},
-        "Operator $in expects at least 1 operand"
-    ),
+    ({"name": {"$in": []}}, "Operator $in expects at least 1 operand"),
     (
         {"name": {"$in": ["adam", 1]}},
-        "Operator $in expects operands of the same type, but got ['adam', 1]"
+        "Operator $in expects operands of the same type, but got ['adam', 1]",
     ),
     (
         {"name": {"$in": {"unexpected": "dict"}}},
-        "Operator $in expects list/tuple of operands, but got {'unexpected': 'dict'}"
+        "Operator $in expects list/tuple of operands, but got {'unexpected': 'dict'}",
     ),
     (
         {"name": {"$in": [{"unexpected": "dict"}]}},
-        "Operator $in: Operand cannot be created from {'unexpected': 'dict'}"
+        "Operator $in: Operand cannot be created from {'unexpected': 'dict'}",
     ),
-    (
-        {"name": {"$nin": []}},
-        "Operator $nin expects at least 1 operand"
-    ),
+    ({"name": {"$nin": []}}, "Operator $nin expects at least 1 operand"),
     (
         {"name": {"$nin": ["adam", 1]}},
-        "Operator $nin expects operands of the same type, but got ['adam', 1]"
+        "Operator $nin expects operands of the same type, but got ['adam', 1]",
     ),
     (
         {"name": {"$nin": {"unexpected": "dict"}}},
-        "Operator $nin expects list/tuple of operands, but got {'unexpected': 'dict'}"
+        "Operator $nin expects list/tuple of operands, but got {'unexpected': 'dict'}",
     ),
     (
         {"name": {"$nin": [{"unexpected": "dict"}]}},
-        "Operator $nin: Operand cannot be created from {'unexpected': 'dict'}"
+        "Operator $nin: Operand cannot be created from {'unexpected': 'dict'}",
     ),
     # eq and ne operators
     (
         {"name": {"$eq": ["unexpected", "list"]}},
-        "Operator $eq expects a single operand, but got list: ['unexpected', 'list']"
+        "Operator $eq expects a single operand, but got list: ['unexpected', 'list']",
     ),
     (
         {"name": {"$eq": {"unexpected": "dict"}}},
-        "Operator $eq: Operand cannot be created from {'unexpected': 'dict'}"
+        "Operator $eq: Operand cannot be created from {'unexpected': 'dict'}",
     ),
     (
         {"name": {"$ne": {"unexpected": "dict"}}},
-        "Operator $ne: Operand cannot be created from {'unexpected': 'dict'}"
+        "Operator $ne: Operand cannot be created from {'unexpected': 'dict'}",
     ),
     # gt, gte, lt, lte operators
     (
         {"name": {"$gt": ["unexpected", "list"]}},
-        "Operator $gt expects a single operand, but got list: ['unexpected', 'list']"
+        "Operator $gt expects a single operand, but got list: ['unexpected', 'list']",
     ),
     (
         {"name": {"$gt": {"unexpected": "dict"}}},
-        "Operator $gt: Operand cannot be created from {'unexpected': 'dict'}"
+        "Operator $gt: Operand cannot be created from {'unexpected': 'dict'}",
     ),
     (
         {"name": {"$gte": False}},
-        "Operator $gte expects operand of type int/float/str/date, but got False (bool)"
+        (
+            "Operator $gte expects operand of type int/float/str/date, "
+            "but got False (bool)"
+        ),
     ),
     (
         {"name": {"$gte": {"unexpected": "dict"}}},
-        "Operator $gte: Operand cannot be created from {'unexpected': 'dict'}"
+        "Operator $gte: Operand cannot be created from {'unexpected': 'dict'}",
     ),
     (
         {"name": {"$lt": ["unexpected", "list"]}},
-        "Operator $lt expects a single operand, but got list: ['unexpected', 'list']"
+        "Operator $lt expects a single operand, but got list: ['unexpected', 'list']",
     ),
     (
         {"name": {"$lt": {"unexpected": "dict"}}},
-        "Operator $lt: Operand cannot be created from {'unexpected': 'dict'}"
+        "Operator $lt: Operand cannot be created from {'unexpected': 'dict'}",
     ),
     (
         {"name": {"$lte": True}},
-        "Operator $lte expects operand of type int/float/str/date, but got True (bool)"
+        "Operator $lte expects operand of type int/float/str/date, but got True (bool)",
     ),
     (
         {"name": {"$lte": {"unexpected": "dict"}}},
-        "Operator $lte: Operand cannot be created from {'unexpected': 'dict'}"
+        "Operator $lte: Operand cannot be created from {'unexpected': 'dict'}",
     ),
     # date operand errors
     (
         {"date": {"$eq": {"type": "date"}}},  # missing 'date' key
-        "Operator $eq: Date operand missing 'date' key: {'type': 'date'}"
+        "Operator $eq: Date operand missing 'date' key: {'type': 'date'}",
     ),
     (
         {"date": {"$gt": {"type": "date", "date": ""}}},  # empty date string
-        "Operator $gt: Date operand with empty value"
+        "Operator $gt: Date operand with empty value",
     ),
 ]

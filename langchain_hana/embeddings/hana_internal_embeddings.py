@@ -49,7 +49,7 @@ class HanaInternalEmbeddings(Embeddings):
             str: The ID of the internal embedding model.
         """
         return self.model_id
-    
+
     def get_remote_source(self) -> str:
         """
         Retrieve the remote source name.

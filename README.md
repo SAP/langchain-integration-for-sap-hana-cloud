@@ -1,14 +1,15 @@
+# LangChain integration for SAP HANA Cloud
+
 [![REUSE status](https://api.reuse.software/badge/github.com/SAP/langchain-integration-for-sap-hana-cloud)](https://api.reuse.software/info/github.com/SAP/langchain-integration-for-sap-hana-cloud)
 
 > [!NOTE]
 >
-> ### Legacy Version
+> **Legacy Version**
 >
-> Langchain 0.3.x compatible version of this package is maintained in the 0.3.x branch:
+> Langchain 0.3.x compatible version of this package is maintained in the
+> 0.3.x branch:
 >
-> [https://github.com/SAP/langchain-integration-for-sap-hana-cloud/tree/0.3.x](https://github.com/SAP/langchain-integration-for-sap-hana-cloud/tree/0.3.x)
-
-# LangChain integration for SAP HANA Cloud
+> [0.3.x branch](https://github.com/SAP/langchain-integration-for-sap-hana-cloud/tree/0.3.x)
 
 ## About this project
 
@@ -41,7 +42,7 @@ See a [usage example](https://github.com/SAP/langchain-integration-for-sap-hana-
 from langchain_hana import HanaDB
 ```
 
-> **Important**:  You can use any embedding class that inherits from `langchain_core.embeddings.Embeddings`—**including** `HanaInternalEmbeddings`, which runs SAP HANA’s `VECTOR_EMBEDDING()` function internally. See [SAP Help](https://help.sap.com/docs/hana-cloud-database/sap-hana-cloud-sap-hana-database-vector-engine-guide/vector-embedding-function-vector?locale=en-US) for more details.
+> **Important**: You can use any embedding class that inherits from `langchain_core.embeddings.Embeddings`—**including** `HanaInternalEmbeddings`, which runs SAP HANA’s `VECTOR_EMBEDDING()` function internally. See [SAP Help](https://help.sap.com/docs/hana-cloud-database/sap-hana-cloud-sap-hana-database-vector-engine-guide/vector-embedding-function-vector?locale=en-US) for more details.
 
 ### Self Query Retriever
 

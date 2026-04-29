@@ -29,8 +29,14 @@ python = "<3.13"
 version = ">=2.1.0"
 python = ">=3.13"
 
+[tool.ruff]
+extend-include = ["*.ipynb"]
+
 [tool.ruff.lint]
 select = ["E", "F", "I", "T201"]
+
+[tool.ruff.lint.per-file-ignores]
+"examples/*.ipynb" = ["T201", "F821"]
 
 [tool.coverage.run]
 omit = ["tests/*"]
@@ -62,6 +68,18 @@ pytest-watcher = "^0.6.3"
 
 [tool.poetry.group.lint.dependencies]
 ruff = "^0.5"
+mdformat = "^1.0.0"
 
 [tool.poetry.group.typing.dependencies]
 mypy = "^1.10"
+types-colorama = "^0.4.15"
+types-defusedxml = "^0.7.0"
+types-docutils = "^0.22.3"
+types-hdbcli = "^2.25.0"
+types-pexpect = "^4.9.0"
+types-psutil = "^7.2.2"
+types-pycurl = "^7.45.7"
+types-Pygments = "^2.20.0"
+types-PyYAML = "^6.0.12"
+types-regex = "^2026.4.4"
+types-requests = "^2.33.0"

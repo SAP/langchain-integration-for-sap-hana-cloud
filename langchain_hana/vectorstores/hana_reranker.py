@@ -1,17 +1,20 @@
 import json
 import logging
-from typing import Any, Sequence
+from typing import Any, Literal, Sequence, overload
 
 from hdbcli import dbapi
+from langchain_core.callbacks import Callbacks
 from langchain_core.documents import BaseDocumentCompressor, Document
 from pydantic import ConfigDict, Field, model_validator
+
 from langchain_hana.vectorstores.utils import (
     _generate_cross_encode_sql_and_params,
     _sanitize_metadata_keys,
-    _validate_rerank_model_id
+    _validate_rerank_model_id,
 )
 
 logger = logging.getLogger(__name__)
+
 
 class HanaReranker(BaseDocumentCompressor):
     """Document compressor that uses Internal SAP Models to Rerank."""
@@ -34,6 +37,26 @@ class HanaReranker(BaseDocumentCompressor):
         _validate_rerank_model_id(self.model_id, self.connection)
         return self
 
+    @overload
+    def rerank(
+        self,
+        documents: Sequence[Document],
+        query: str,
+        top_n: int = 3,
+        return_documents: Literal[True] = True,
+        rank_fields: list[str] = [],
+    ) -> list[tuple[int, float, Document]]: ...
+
+    @overload
+    def rerank(
+        self,
+        documents: Sequence[Document],
+        query: str,
+        top_n: int = 3,
+        return_documents: Literal[False] = False,
+        rank_fields: list[str] = [],
+    ) -> list[tuple[int, float]]: ...
+
     def rerank(
         self,
         documents: Sequence[Document],
@@ -41,26 +64,36 @@ class HanaReranker(BaseDocumentCompressor):
         top_n: int = 3,
         return_documents: bool = True,
         rank_fields: list[str] = [],
-    ) -> list[tuple[int, Document, float]]:
-        """Reranks documents based on relevance to the query using SAP HANA's CROSS_ENCODE function.
+    ) -> list[tuple[int, float, Document]] | list[tuple[int, float]]:
+        """Reranks documents based on relevance to the query.
+
+        Uses SAP HANA's CROSS_ENCODE function.
+
         Args:
             documents: A sequence of Document objects to be reranked.
             query: The query string to compare the documents against.
-            top_n: Optional number of top results to return. If not provided, uses the default top_n = 3.
-            return_documents: Whether to return the documents in the reranking results.
-            rank_fields: additional list of metadata fields to include in the reranking along with the page_content. Defaults to empty.
+            top_n: Optional number of top results to return. If not provided,
+                uses the default top_n = 3.
+            return_documents: Whether to return the documents in the reranking
+                results.
+            rank_fields: additional list of metadata fields to include in the
+                reranking along with the page_content. Defaults to empty.
         Returns:
-            A list of tuples containing the index, document, and score, ordered by relevance.
+            A list of tuples containing the index, document, and score,
+            ordered by relevance.
         """
 
         if top_n <= 0 or top_n > len(documents):
             raise ValueError(
-                "top_n must be greater than 0 and less than or equal to the number of documents"
+                "top_n must be greater than 0 and less than or equal to "
+                "the number of documents"
             )
 
         _sanitize_metadata_keys(rank_fields)  # Validate rank_fields
 
-        document_idx_with_scores = []
+        document_idx_with_scores: (
+            list[tuple[int, float, Document]] | list[tuple[int, float]]
+        ) = []
 
         with self.connection.cursor() as cur:
             temp_table_name = "#RERANK_DOCS"
@@ -78,7 +111,10 @@ class HanaReranker(BaseDocumentCompressor):
                 raise RuntimeError(f"Error creating temporary table for reranking: {e}")
 
             try:
-                insert_sql = f'INSERT INTO "{temp_table_name}" ("INDEX", "ID", "TEXT", "METADATA") VALUES (?, ?, ?, ?)'
+                insert_sql = (
+                    f'INSERT INTO "{temp_table_name}" '
+                    '("INDEX", "ID", "TEXT", "METADATA") VALUES (?, ?, ?, ?)'
+                )
                 insert_sql_params = []
                 for idx, doc in enumerate(documents):
                     _sanitize_metadata_keys(list(doc.metadata.keys()))
@@ -118,9 +154,9 @@ class HanaReranker(BaseDocumentCompressor):
                         document = Document(
                             id=doc_id, page_content=text, metadata=metadata
                         )
-                        document_idx_with_scores.append((idx, score, document))
+                        document_idx_with_scores.append((idx, score, document))  # type: ignore[arg-type]
                     else:
-                        document_idx_with_scores.append((idx, score))
+                        document_idx_with_scores.append((idx, score))  # type: ignore[arg-type]
             finally:
                 cur.execute(
                     f"""DROP TABLE "{temp_table_name}" """
@@ -132,20 +168,26 @@ class HanaReranker(BaseDocumentCompressor):
         self,
         documents: Sequence[Document],
         query: str,
+        callbacks: Callbacks | None = None,
     ) -> list[Document]:
         """Compress documents using the rerank method.
+
         Args:
             documents: A sequence of Document objects to be compressed.
-            query: The query string to compare the documents against for relevance.
+            query: The query string to compare the documents against for
+                relevance.
         Returns:
-            A list of Document objects reranked according to relevance to the query.
-            Only the top 5 documents are returned, or fewer if there are less than 5 documents.
-            The scores are added to the metadata of each Document under the key "relevance_score".
+            A list of Document objects reranked according to relevance to the
+            query. Only the top 5 documents are returned, or fewer if there are
+            less than 5 documents. The scores are added to the metadata of each
+            Document under the key "relevance_score".
         """
 
         compressed = []
 
-        reranked_results = self.rerank(documents=documents, query=query, top_n=min(5, len(documents)))
+        reranked_results = self.rerank(
+            documents=documents, query=query, top_n=min(5, len(documents))
+        )
 
         for idx, score, doc in reranked_results:
             doc.metadata["relevance_score"] = score

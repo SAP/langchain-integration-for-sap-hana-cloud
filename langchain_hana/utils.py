@@ -12,12 +12,12 @@ class DistanceStrategy(str, Enum):
     COSINE = "COSINE"
 
 
-def _validate_k(k: int):
+def _validate_k(k: int) -> None:
     if not isinstance(k, int) or k <= 0:
         raise ValueError("Parameter 'k' must be an integer greater than 0")
 
 
-def _validate_k_and_fetch_k(k: int, fetch_k: int):
+def _validate_k_and_fetch_k(k: int, fetch_k: int) -> None:
     _validate_k(k)
     if not isinstance(fetch_k, int) or fetch_k < k:
         raise ValueError(

@@ -1,6 +1,7 @@
 """Unit tests for HanaSparqlQAChain."""
 
 import pytest
+
 from langchain_hana import HanaSparqlQAChain
 
 
