@@ -37,7 +37,7 @@ To set up the development environment, follow these steps:
 
    This command installs dependencies for development, including those for linting, formatting, spell-checking, and testing.
 
-1. Configure nbstripout to prevent notebook metadata noise in git diffs:q
+1. Configure nbstripout to prevent notebook metadata noise in git diffs:
 
    ```bash
    nbstripout --install --attributes .gitattributes
