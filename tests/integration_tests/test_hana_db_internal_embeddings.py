@@ -146,11 +146,17 @@ def invalid_rerank_config_non_existent_model_id() -> dict[str, str]:
             "internal_embedding_model_id": os.environ[
                 "HANA_DB_EMBEDDING_REMOTE_MODEL_ID"
             ],
-            "remote_source_schema": os.environ["HANA_DB_EMBEDDING_REMOTE_SOURCE_SCHEMA"],
+            "remote_source_schema": os.environ[
+                "HANA_DB_EMBEDDING_REMOTE_SOURCE_SCHEMA"
+            ],
             "remote_source": os.environ["HANA_DB_EMBEDDING_REMOTE_SOURCE"],
-        }
+        },
     ],
-    ids=["without_remote_source", "with_remote_source", "with_remote_source_and_schema"],
+    ids=[
+        "without_remote_source",
+        "with_remote_source",
+        "with_remote_source_and_schema",
+    ],
 )
 def embedding_param(request: pytest.FixtureRequest) -> dict[str, str]:
     """Parametrize embedding values for testing."""
