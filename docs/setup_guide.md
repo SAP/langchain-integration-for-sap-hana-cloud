@@ -46,6 +46,12 @@ To set up the development environment, follow these steps:
 
    This ensures that environment-specific notebook metadata (like kernel names and Python versions) are automatically stripped when committing notebooks, while preserving cell outputs and execution counts.
 
+1. Configure git-blame-ignore-revs to remove noise in git blame:
+
+   ```bash
+   git config blame.ignoreRevsFile .git-blame-ignore-revs
+   ```
+
 1. You are now ready to work on the package!
 
 ______________________________________________________________________
