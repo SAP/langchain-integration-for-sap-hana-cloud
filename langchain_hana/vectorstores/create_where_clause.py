@@ -280,9 +280,9 @@ class CreateWhereClause:
             raise ValueError(
                 f"Operator {operator} expects a list of operands, but got {operands!r}"
             )
-        if len(operands) < 2:
+        if len(operands) < 1:
             raise ValueError(
-                f"Operator {operator} expects at least 2 operands, but got {operands!r}"
+                f"Operator {operator} expects at least 1 operand, but got {operands!r}"
             )
         if operator in ("$and", "$or"):
             sql_clauses, query_tuple = [], ()
