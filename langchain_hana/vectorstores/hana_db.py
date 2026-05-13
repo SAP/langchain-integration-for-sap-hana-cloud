@@ -107,6 +107,7 @@ class HanaDB(VectorStore):
         self.embedding: Embeddings
         self.use_internal_embeddings: bool = False
         self.internal_embedding_model_id: str = ""
+        self.internal_embedding_remote_source_schema: str = ""
         self.internal_embedding_remote_source: str = ""
         self.set_embedding(embedding)
 
@@ -123,6 +124,9 @@ class HanaDB(VectorStore):
             # Internal embeddings
             self.use_internal_embeddings = True
             self.internal_embedding_model_id = embedding.get_model_id()
+            self.internal_embedding_remote_source_schema = (
+                embedding.get_remote_source_schema()
+            )
             self.internal_embedding_remote_source = embedding.get_remote_source()
             self._validate_internal_embedding_function()
         else:
@@ -219,20 +223,23 @@ class HanaDB(VectorStore):
 
     def _generate_vector_embedding_sql_and_params(
         self, text: str, type: str
-    ) -> tuple[str, tuple[str, str]]:
+    ) -> tuple[str, tuple[str, ...]]:
         """Generate the VECTOR_EMBEDDING SQL expression and parameters."""
         if type != "QUERY" and type != "DOCUMENT":
             raise ValueError("type must be either 'QUERY' or 'DOCUMENT'")
 
-        vector_embedding_params = (text, self.internal_embedding_model_id)
+        vector_embedding_params: tuple[str, ...] = (
+            text,
+            self.internal_embedding_model_id,
+        )
         if not self.internal_embedding_remote_source:
             vector_embedding_sql = f"""VECTOR_EMBEDDING(?, '{type}', ?)"""
         else:
-            vector_embedding_sql = (
-                f"""VECTOR_EMBEDDING(?, '{type}', ?, """
-                f""""{self.internal_embedding_remote_source}")"""
+            vector_embedding_sql = f"""VECTOR_EMBEDDING(?, '{type}', ?, ?, ?)"""
+            vector_embedding_params += (
+                self.internal_embedding_remote_source_schema,
+                self.internal_embedding_remote_source,
             )
-
         return vector_embedding_sql, vector_embedding_params
 
     def _validate_internal_embedding_function(self) -> None:
@@ -716,7 +723,8 @@ class HanaDB(VectorStore):
             if self.internal_embedding_remote_source:
                 vector_embedding_sql = (
                     f"""VECTOR_EMBEDDING(:i_text, 'DOCUMENT', :i_model_id, """
-                    f""""{self.internal_embedding_remote_source}")"""
+                    f"""'{self.internal_embedding_remote_source_schema}', """
+                    f"""'{self.internal_embedding_remote_source}')"""
                 )
             else:
                 vector_embedding_sql = (
@@ -1103,7 +1111,7 @@ class HanaDB(VectorStore):
         embedding_expr: str,
         k: int,
         filter: Optional[dict] = None,
-        vector_embedding_params: Optional[tuple[str, str]] = None,
+        vector_embedding_params: Optional[tuple[str, ...]] = None,
         rerank_config: Optional[dict[str, Any]] = None,
     ) -> list[tuple[Document, float, list[float]]]:
         """Perform similarity search and return documents with scores and vectors.
