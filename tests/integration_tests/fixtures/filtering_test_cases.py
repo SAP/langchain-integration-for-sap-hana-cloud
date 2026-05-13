@@ -279,6 +279,20 @@ TYPE_2_FILTERING_TEST_CASES = [
 
 TYPE_3_FILTERING_TEST_CASES = [
     # These involve usage of AND and OR operators
+    # Single operand $or
+    (
+        {"$or": [{"id": 1}]},
+        [1],
+        "WHERE JSON_VALUE(VEC_META, '$.id') = TO_DOUBLE(?)",
+        (1,),
+    ),
+    # Single operand $and
+    (
+        {"$and": [{"name": "bob"}]},
+        [2],
+        "WHERE JSON_VALUE(VEC_META, '$.name') = TO_NVARCHAR(?)",
+        ("bob",),
+    ),
     (
         {"$or": [{"id": 1}, {"id": 2}]},
         [1, 2],
@@ -486,8 +500,12 @@ ERROR_FILTERING_TEST_CASES = [
     ),
     # # logical operators
     (
-        {"$or": [{"id": 1}]},
-        "Operator $or expects at least 2 operands, but got [{'id': 1}]",
+        {"$or": []},
+        "Operator $or expects at least 1 operand, but got []",
+    ),
+    (
+        {"$and": []},
+        "Operator $and expects at least 1 operand, but got []",
     ),
     ({"$and": "adam"}, "Operator $and expects a list of operands, but got 'adam'"),
     # # contains operator
