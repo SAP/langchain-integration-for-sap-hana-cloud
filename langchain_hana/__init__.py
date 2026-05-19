@@ -1,5 +1,6 @@
 from importlib import metadata
 
+from langchain_hana.agents import HanaSparqlQAAgent
 from langchain_hana.chains import HanaSparqlQAChain
 from langchain_hana.embeddings import HanaInternalEmbeddings
 from langchain_hana.graphs import HanaRdfGraph
@@ -19,6 +20,7 @@ __all__ = [
     "HanaInternalEmbeddings",
     "HanaRdfGraph",
     "HanaSparqlQAChain",
+    "HanaSparqlQAAgent",
     "HanaReranker",
     "__version__",
 ]
