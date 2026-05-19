@@ -34,6 +34,8 @@ env:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     # The 'env:' block at the job level makes these variables available in all steps.
     env:
