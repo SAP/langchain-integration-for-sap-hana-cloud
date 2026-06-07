@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 SYSTEM_PROMPT = """
 You are agent designed to answer questions based on RDF data stored in a HanaRdfGraph.
 The graph to query can be identified by using this FROM CLAUSE. "{}".

@@ -2,9 +2,9 @@ from typing import Any, Callable, Sequence
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import ModelCallLimitMiddleware
-from langchain.agents.middleware.types import AgentMiddleware, ContextT, StateT_co
+from langchain.agents.middleware.types import AgentMiddleware
 from langchain.tools import BaseTool, tool
-from langchain_core.language_models import BaseLanguageModel
+from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import SystemMessage
 
 from langchain_hana.graphs import HanaRdfGraph
@@ -19,7 +19,7 @@ class HanaSparqlQAAgent:
         self,
         graph: HanaRdfGraph,
         tools: Sequence[BaseTool | Callable[..., Any] | dict[str, Any]] | None = None,
-        middleware: Sequence[AgentMiddleware[StateT_co, ContextT]] = (),
+        middleware: Sequence[AgentMiddleware[Any, Any, Any]] = (),
         system_prompt: str | SystemMessage | None = None,
         include_default_tools: bool = True,
         include_default_middleware: bool = True,
@@ -27,14 +27,16 @@ class HanaSparqlQAAgent:
         self.graph = graph
         self.ontology = self.graph.get_schema.serialize(format="turtle")
 
+        self.system_prompt: str | SystemMessage
         if system_prompt is None:
             self.system_prompt = SYSTEM_PROMPT.format(self.graph.from_clause)
         else:
             self.system_prompt = system_prompt
 
         # Create tools bound to this instance
+        self.tools: list[BaseTool | Callable[..., Any] | dict[str, Any]]
         if tools:
-            self.tools = tools
+            self.tools = list(tools)
         else:
             self.tools = []
 
@@ -44,15 +46,16 @@ class HanaSparqlQAAgent:
             )
 
         # Create the middleware
+        self.middleware: list[AgentMiddleware[Any, Any, Any]]
         if middleware:
-            self.middleware = middleware
+            self.middleware = list(middleware)
         else:
             self.middleware = []
 
         if include_default_middleware:
             self.middleware.append(ModelCallLimitMiddleware(run_limit=10))
 
-    def _create_ontology_tool(self):
+    def _create_ontology_tool(self) -> BaseTool:
         @tool
         def retrieve_ontology() -> str:
             """Retrieve ontology from the HANA RDF Graph"""
@@ -60,7 +63,7 @@ class HanaSparqlQAAgent:
 
         return retrieve_ontology
 
-    def _create_sparql_tool(self):
+    def _create_sparql_tool(self) -> BaseTool:
         @tool
         def execute_sparql(query: str) -> str:
             """Query the HANA RDF graph and return the fetched triples as a string.
@@ -79,12 +82,12 @@ class HanaSparqlQAAgent:
     def create_agent(
         cls,
         graph: HanaRdfGraph,
-        model: BaseLanguageModel,
+        model: str | BaseChatModel,
         tools: Sequence[BaseTool | Callable[..., Any] | dict[str, Any]] | None = None,
-        system_prompt:  str | SystemMessage | None = SYSTEM_PROMPT,
-        middleware: Sequence[AgentMiddleware[StateT_co, ContextT]] = (),
-        **kwargs,
-    ):
+        system_prompt: str | SystemMessage | None = SYSTEM_PROMPT,
+        middleware: Sequence[AgentMiddleware[Any, Any, Any]] = (),
+        **kwargs: Any,
+    ) -> Any:
         """Create a new SPARQL QA agent instance"""
         instance = cls(
             graph=graph, tools=tools, middleware=middleware, system_prompt=system_prompt
