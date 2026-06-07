@@ -72,3 +72,7 @@ jobs:
       - name: Run Integration Tests
         id: integration_tests
         run: poetry run pytest tests/integration_tests/
+      
+      - name: Run Agentevals
+        id: agentevals
+        run: poetry run pytest tests/agentevals/
