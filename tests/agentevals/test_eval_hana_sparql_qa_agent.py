@@ -16,7 +16,6 @@ from gen_ai_hub.proxy.langchain.openai import (  # type: ignore[import-untyped]
     ChatOpenAI,
 )
 from hdbcli import dbapi
-from langchain_core.messages.utils import convert_to_openai_messages
 
 from langchain_hana import HanaRdfGraph, HanaSparqlQAAgent
 from tests.fixtures.agent_evals_fixtures import (
@@ -85,7 +84,7 @@ def trajectory_llm_judge(llm: ChatOpenAI) -> Any:
 
 def _run_agent(agent: Any, input_messages: list[dict]) -> list[dict]:
     result = agent.invoke({"messages": input_messages})
-    return convert_to_openai_messages(result["messages"])
+    return result["messages"]
 
 
 _ALL_TRAJECTORY_CASES = (
