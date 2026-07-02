@@ -17,14 +17,14 @@ class HanaSparqlQAAgent:
 
     The agent is backed by LangChain's `createAgent` harness and, by default, is
     equipped with two tools:
-    
+
     1. `retrieveOntology`- returns the serialized ontology of the graph.
     2. `executeSparql`- runs a SPARQL query against the graph and returns the result.
 
     Example:
     ```python
         agent = HanaSparqlQAAgent.create_agent(
-            graph=graph,    
+            graph=graph,
             model=model,
         )
         response = agent.invoke(query)
@@ -49,7 +49,9 @@ class HanaSparqlQAAgent:
 
         self.system_prompt: str | SystemMessage
         if system_prompt is None:
-            self.system_prompt = SYSTEM_PROMPT.format(from_clause=self.graph.from_clause)
+            self.system_prompt = SYSTEM_PROMPT.format(
+                from_clause=self.graph.from_clause
+            )
         else:
             self.system_prompt = system_prompt
 
@@ -78,6 +80,7 @@ class HanaSparqlQAAgent:
 
     def _create_ontology_tool(self) -> BaseTool:
         """Creates the tool that returns the ontology of the HANA RDF graph"""
+
         @tool
         def retrieve_ontology() -> str:
             """Retrieve ontology from the HANA RDF Graph"""
@@ -87,6 +90,7 @@ class HanaSparqlQAAgent:
 
     def _create_sparql_tool(self) -> BaseTool:
         """Creates the tool that executes a SPARQL query on the HANA RDF graph"""
+
         @tool
         def execute_sparql(query: str) -> str:
             """Query the HANA RDF graph and return the fetched triples as a string.
@@ -114,21 +118,31 @@ class HanaSparqlQAAgent:
         **kwargs: Any,
     ) -> Any:
         """Create a new SPARQL QA agent instance
+
         Args:
-            graph: The HANA RDF graph the agent queries
-            model: Language model to use for the agent
-            tools: Optional additional tools to expose to the agent 
-            system_prompt: Optional system prompt for the agent. Defaults to a built in prompt.
-            middleware: Optional list of middleware to include in the agent
-            include_default_tools: Whether to include default tools. Defaults to True
-            include_default_middleware: Whether to include default middleware. Defaults to True
-            **kwargs: Additional keyword arguments for the base agent creation
-            Returns: A new SPARQL QA agent instance
+            graph: The HANA RDF graph the agent queries.
+            model: Language model to use for the agent.
+            tools: Optional additional tools to expose to the agent.
+            system_prompt: Optional system prompt for the agent.
+                Defaults to a built-in prompt.
+            middleware: Optional list of middleware to include in the agent.
+            include_default_tools: Whether to include default tools.
+                Defaults to True.
+            include_default_middleware: Whether to include default
+                middleware. Defaults to True.
+            **kwargs: Additional keyword arguments for the base agent creation.
+
+        Returns:
+            A new SPARQL QA agent instance.
         """
 
         instance = cls(
-            graph=graph, tools=tools, middleware=middleware, system_prompt=system_prompt,
-            include_default_tools=include_default_tools, include_default_middleware=include_default_middleware
+            graph=graph,
+            tools=tools,
+            middleware=middleware,
+            system_prompt=system_prompt,
+            include_default_tools=include_default_tools,
+            include_default_middleware=include_default_middleware,
         )
         return create_base_agent(
             model,
