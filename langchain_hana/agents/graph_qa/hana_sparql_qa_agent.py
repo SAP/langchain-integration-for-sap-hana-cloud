@@ -1,7 +1,11 @@
 from typing import Any, Callable, Sequence
 
 from langchain.agents import create_agent as create_base_agent
-from langchain.agents.middleware import ModelRetryMiddleware, ToolRetryMiddleware
+from langchain.agents.middleware import (
+    ModelCallLimitMiddleware,
+    ModelRetryMiddleware,
+    ToolRetryMiddleware,
+)
 from langchain.agents.middleware.types import AgentMiddleware
 from langchain.tools import BaseTool, tool
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -75,8 +79,13 @@ class HanaSparqlQAAgent:
             self.middleware = []
 
         if include_default_middleware:
-            self.middleware.append(ModelRetryMiddleware(max_retries=3))
-            self.middleware.append(ToolRetryMiddleware(max_retries=2))
+            self.middleware.extend(
+                [
+                    ModelRetryMiddleware(max_retries=3),
+                    ToolRetryMiddleware(max_retries=2),
+                    ModelCallLimitMiddleware(run_limit=10),
+                ]
+            )
 
     def _create_ontology_tool(self) -> BaseTool:
         """Creates the tool that returns the ontology of the HANA RDF graph"""
