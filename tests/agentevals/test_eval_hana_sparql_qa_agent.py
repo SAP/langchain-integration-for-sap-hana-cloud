@@ -12,10 +12,9 @@ from agentevals.trajectory.llm import (  # type: ignore[import-untyped]
 from agentevals.trajectory.match import (  # type: ignore[import-untyped]
     create_trajectory_match_evaluator,
 )
-from gen_ai_hub.proxy.langchain.openai import (  # type: ignore[import-untyped]
-    ChatOpenAI,
-)
+from gen_ai_hub.proxy.langchain import init_llm  # type: ignore[import-untyped]
 from hdbcli import dbapi
+from langchain_core.language_models import BaseChatModel
 
 from langchain_hana import HanaRdfGraph, HanaSparqlQAAgent
 from tests.fixtures.agent_evals_fixtures import (
@@ -47,7 +46,7 @@ def teardown_module(module: Any) -> None:
     config.conn.close()
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def graph() -> HanaRdfGraph:
     return HanaRdfGraph(
         connection=config.conn,
@@ -56,17 +55,17 @@ def graph() -> HanaRdfGraph:
     )
 
 
-@pytest.fixture
-def llm() -> ChatOpenAI:
-    return ChatOpenAI(proxy_model_name="gpt-4o", temperature=0)
+@pytest.fixture(scope="module")
+def llm() -> BaseChatModel:
+    return init_llm(os.environ["AICORE_MODEL_ID"])
 
 
-@pytest.fixture
-def agent(graph: HanaRdfGraph, llm: ChatOpenAI) -> Any:
+@pytest.fixture(scope="module")
+def agent(graph: HanaRdfGraph, llm: BaseChatModel) -> Any:
     return HanaSparqlQAAgent.create_agent(graph=graph, model=llm)
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def trajectory_match_evaluator() -> Any:
     return create_trajectory_match_evaluator(
         trajectory_match_mode="superset",
@@ -75,7 +74,7 @@ def trajectory_match_evaluator() -> Any:
 
 
 @pytest.fixture
-def trajectory_llm_judge(llm: ChatOpenAI) -> Any:
+def trajectory_llm_judge(llm: BaseChatModel) -> Any:
     return create_trajectory_llm_as_judge(
         prompt=TRAJECTORY_ACCURACY_PROMPT_WITH_REFERENCE,
         judge=llm,
@@ -100,7 +99,7 @@ _ALL_TRAJECTORY_CASES = (
     ids=[f"{cat}::{q}" for cat, q, _, _ in _ALL_TRAJECTORY_CASES],
 )
 def test_trajectory_match(
-    agent: Any,
+    agent: HanaSparqlQAAgent,
     trajectory_match_evaluator: Any,
     category: str,
     question: str,
@@ -125,7 +124,7 @@ def test_trajectory_match(
     ids=[f"{cat}::{q}" for cat, q, _, _ in _ALL_TRAJECTORY_CASES],
 )
 def test_trajectory_llm_judge(
-    agent: Any,
+    agent: HanaSparqlQAAgent,
     trajectory_llm_judge: Any,
     category: str,
     question: str,
@@ -179,7 +178,7 @@ class Grade(TypedDict):
 
 
 @pytest.fixture
-def answer_grader(llm: ChatOpenAI) -> Any:
+def answer_grader(llm: BaseChatModel) -> Any:
     return llm.with_structured_output(Grade, method="json_schema", strict=True)
 
 

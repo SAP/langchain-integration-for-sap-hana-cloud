@@ -34,16 +34,7 @@ jobs:
       contents: read
 
     uses: ./.github/workflows/ci.yml
-    secrets:
-      HANA_DB_ADDRESS: ${{ secrets.HANA_DB_ADDRESS }}
-      HANA_DB_PORT: ${{ secrets.HANA_DB_PORT }}
-      HANA_DB_USER: ${{ secrets.HANA_DB_USER }}
-      HANA_DB_PASSWORD: ${{ secrets.HANA_DB_PASSWORD }}
-      HANA_DB_EMBEDDING_MODEL_ID: ${{ secrets.HANA_DB_EMBEDDING_MODEL_ID }}
-      HANA_DB_EMBEDDING_REMOTE_MODEL_ID: ${{ secrets.HANA_DB_EMBEDDING_REMOTE_MODEL_ID }}
-      HANA_DB_EMBEDDING_REMOTE_SOURCE_SCHEMA: ${{ secrets.HANA_DB_EMBEDDING_REMOTE_SOURCE_SCHEMA }}
-      HANA_DB_EMBEDDING_REMOTE_SOURCE: ${{ secrets.HANA_DB_EMBEDDING_REMOTE_SOURCE }}
-      HANA_DB_RERANK_MODEL_ID: ${{ secrets.HANA_DB_RERANK_MODEL_ID }}
+    secrets: inherit
   
   build:
     needs:
