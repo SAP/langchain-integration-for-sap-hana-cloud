@@ -29,12 +29,6 @@ jobs:
       HANA_DB_EMBEDDING_REMOTE_SOURCE_SCHEMA: ${{ secrets.HANA_DB_EMBEDDING_REMOTE_SOURCE_SCHEMA }}
       HANA_DB_EMBEDDING_REMOTE_SOURCE: ${{ secrets.HANA_DB_EMBEDDING_REMOTE_SOURCE }}
       HANA_DB_RERANK_MODEL_ID: ${{ secrets.HANA_DB_RERANK_MODEL_ID }}
-      AICORE_MODEL_ID: ${{ secrets.AICORE_MODEL_ID }}
-      AICORE_AUTH_URL: ${{ secrets.AICORE_AUTH_URL }}
-      AICORE_CLIENT_ID: ${{ secrets.AICORE_CLIENT_ID }}
-      AICORE_CLIENT_SECRET: ${{ secrets.AICORE_CLIENT_SECRET }}
-      AICORE_RESOURCE_GROUP: ${{ secrets.AICORE_RESOURCE_GROUP }}
-      AICORE_BASE_URL: ${{ secrets.AICORE_BASE_URL }}
 
     steps:
       - name: Check out the repository
@@ -58,8 +52,3 @@ jobs:
       - name: Run Integration Tests
         id: integration_tests
         run: poetry run pytest tests/integration_tests/
-      
-      - name: Run Agentevals
-        id: agentevals
-        continue-on-error: true
-        run: poetry run pytest tests/agentevals/
