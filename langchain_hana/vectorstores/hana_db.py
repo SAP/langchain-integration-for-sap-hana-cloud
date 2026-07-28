@@ -100,7 +100,7 @@ class HanaDB(VectorStore):
         if schema_name:
             self.schema_name = HanaDB._sanitize_name(schema_name)
         else:
-            self.schema_name = None
+            self.schema_name = ""
         self.content_column = HanaDB._sanitize_name(content_column)
         self.metadata_column = HanaDB._sanitize_name(metadata_column)
         self.vector_column = HanaDB._sanitize_name(vector_column)
