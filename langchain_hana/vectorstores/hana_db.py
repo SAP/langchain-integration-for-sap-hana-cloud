@@ -24,7 +24,12 @@ from langchain_core.vectorstores import VectorStore
 from langchain_core.vectorstores.utils import maximal_marginal_relevance
 
 from langchain_hana.embeddings import HanaInternalEmbeddings
-from langchain_hana.utils import DistanceStrategy, _validate_k, _validate_k_and_fetch_k
+from langchain_hana.utils import (
+    DistanceStrategy,
+    _table_ref,
+    _validate_k,
+    _validate_k_and_fetch_k,
+)
 from langchain_hana.vectorstores.create_where_clause import (
     CreateWhereClause,
 )
@@ -71,6 +76,7 @@ class HanaDB(VectorStore):
         embedding: Embeddings,
         distance_strategy: DistanceStrategy = default_distance_strategy,
         table_name: str = default_table_name,
+        schema_name: str = "",
         content_column: str = default_content_column,
         metadata_column: str = default_metadata_column,
         vector_column: str = default_vector_column,
@@ -91,6 +97,10 @@ class HanaDB(VectorStore):
         self.connection = connection
         self.distance_strategy = distance_strategy
         self.table_name = HanaDB._sanitize_name(table_name)
+        if schema_name:
+            self.schema_name = HanaDB._sanitize_name(schema_name)
+        else:
+            self.schema_name = None
         self.content_column = HanaDB._sanitize_name(content_column)
         self.metadata_column = HanaDB._sanitize_name(metadata_column)
         self.vector_column = HanaDB._sanitize_name(vector_column)
@@ -138,7 +148,7 @@ class HanaDB(VectorStore):
         """Create the table if it doesn't exist and validate columns."""
         if not self._table_exists(self.table_name):
             sql_str = (
-                f'CREATE TABLE "{self.table_name}"('
+                f"CREATE TABLE {self._table_ref}("
                 f'"{self.content_column}" NCLOB, '
                 f'"{self.metadata_column}" NCLOB, '
                 f'"{self.vector_column}" {self.vector_column_type} '
@@ -167,8 +177,12 @@ class HanaDB(VectorStore):
             self._check_column(self.table_name, column_name)
 
     def _table_exists(self, table_name: str) -> bool:
+        if self.schema_name:
+            schema_str = f"'{self.schema_name}'"
+        else:
+            schema_str = "CURRENT_SCHEMA"
         sql_str = (
-            "SELECT COUNT(*) FROM SYS.TABLES WHERE SCHEMA_NAME = CURRENT_SCHEMA"
+            f"SELECT COUNT(*) FROM SYS.TABLES WHERE SCHEMA_NAME = {schema_str}"
             " AND TABLE_NAME = ?"
         )
         try:
@@ -189,9 +203,13 @@ class HanaDB(VectorStore):
         column_type: list[str] | None = None,
         column_length: int | None = None,
     ) -> None:
+        if self.schema_name:
+            schema_str = f"'{self.schema_name}'"
+        else:
+            schema_str = "CURRENT_SCHEMA"
         sql_str = (
             "SELECT DATA_TYPE_NAME, LENGTH FROM SYS.TABLE_COLUMNS WHERE "
-            "SCHEMA_NAME = CURRENT_SCHEMA "
+            f"SCHEMA_NAME = {schema_str} "
             "AND TABLE_NAME = ? AND COLUMN_NAME = ?"
         )
         try:
@@ -271,6 +289,10 @@ class HanaDB(VectorStore):
     @property
     def embeddings(self) -> Embeddings:
         return self.embedding
+
+    @property
+    def _table_ref(self) -> str:
+        return _table_ref(self.table_name, self.schema_name)
 
     @staticmethod
     def _sanitize_name(input_str: str) -> str:
@@ -525,7 +547,7 @@ class HanaDB(VectorStore):
 
         # Create the index SQL string with the ONLINE keyword
         sql_str = (
-            f'CREATE HNSW VECTOR INDEX {index_name} ON "{self.table_name}" '
+            f"CREATE HNSW VECTOR INDEX {index_name} ON {self._table_ref} "
             f'("{self.vector_column}") '
             f"SIMILARITY FUNCTION {distance_func_name} "
         )
@@ -618,7 +640,7 @@ class HanaDB(VectorStore):
 
         specific_metadata_columns_string = self._get_specific_metadata_columns_string()
         sql_str = (
-            f'INSERT INTO "{self.table_name}" ("{self.content_column}", '
+            f'INSERT INTO {self._table_ref} ("{self.content_column}", '
             f'"{self.metadata_column}", '
             f'"{self.vector_column}"{specific_metadata_columns_string}) '
             f"VALUES (?, ?, ?"
@@ -671,7 +693,7 @@ class HanaDB(VectorStore):
         )
 
         sql_str = (
-            f'INSERT INTO "{self.table_name}" ("{self.content_column}", '
+            f'INSERT INTO {self._table_ref} ("{self.content_column}", '
             f'"{self.metadata_column}", '
             f'"{self.vector_column}"{specific_metadata_columns_string}) '
             f"VALUES (?, ?, {vector_embedding_sql} "
@@ -807,7 +829,7 @@ class HanaDB(VectorStore):
         specific_metadata_columns_string = self._get_specific_metadata_columns_string()
 
         sql_str = (
-            f'INSERT INTO "{self.table_name}" ("{self.content_column}", '
+            f'INSERT INTO {self._table_ref} ("{self.content_column}", '
             f'"{self.metadata_column}", '
             f'"{self.vector_column}"{specific_metadata_columns_string}) '
             f"VALUES (?, ?, ? "
@@ -840,6 +862,7 @@ class HanaDB(VectorStore):
         connection: dbapi.Connection = None,  # type: ignore[assignment]
         distance_strategy: DistanceStrategy = default_distance_strategy,
         table_name: str = default_table_name,
+        schema_name: str = "",
         content_column: str = default_content_column,
         metadata_column: str = default_metadata_column,
         vector_column: str = default_vector_column,
@@ -862,6 +885,7 @@ class HanaDB(VectorStore):
             embedding=embedding,
             distance_strategy=distance_strategy,
             table_name=table_name,
+            schema_name=schema_name,
             content_column=content_column,
             metadata_column=metadata_column,
             vector_column=vector_column,
@@ -1166,7 +1190,7 @@ class HanaDB(VectorStore):
         if metadata_projection:
             from_clause = INTERMEDIATE_TABLE_NAME
         else:
-            from_clause = f'"{self.table_name}"'
+            from_clause = self._table_ref
 
         sql_str = (
             f"{metadata_projection} "
@@ -1326,7 +1350,7 @@ class HanaDB(VectorStore):
         return (
             f"WITH {INTERMEDIATE_TABLE_NAME} AS ("
             f"SELECT *, {', '.join(metadata_columns)} "
-            f"FROM \"{self.table_name}\")"
+            f"FROM {self._table_ref})"
         )
 
     def similarity_search_by_vector(  # type: ignore[override]
@@ -1389,7 +1413,7 @@ class HanaDB(VectorStore):
             raise ValueError("Parameter 'filter' is required when calling 'delete'")
 
         where_clause, parameters = CreateWhereClause(self)(filter)
-        sql_str = f'DELETE FROM "{self.table_name}" {where_clause}'
+        sql_str = f"DELETE FROM {self._table_ref} {where_clause}"
 
         try:
             cur = self.connection.cursor()

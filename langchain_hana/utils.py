@@ -23,3 +23,10 @@ def _validate_k_and_fetch_k(k: int, fetch_k: int) -> None:
         raise ValueError(
             "Parameter 'fetch_k' must be an integer greater than or equal to 'k'"
         )
+
+
+def _table_ref(table_name: str, schema_name: str | None) -> str:
+    """Return a quoted, optionally schema-qualified SQL table reference."""
+    if schema_name:
+        return f'"{schema_name}"."{table_name}"'
+    return f'"{table_name}"'
