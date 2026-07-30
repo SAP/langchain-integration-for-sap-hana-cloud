@@ -5,7 +5,7 @@ import pytest
 
 from langchain_hana.vectorstores.create_where_clause import CreateWhereClause
 from langchain_hana.vectorstores.hana_db import default_metadata_column
-from tests.integration_tests.fixtures.filtering_test_cases import (
+from tests.fixtures.filtering_test_cases import (
     ERROR_FILTERING_TEST_CASES,
     FILTERING_TEST_CASES,
 )

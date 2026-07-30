@@ -102,7 +102,7 @@ def default_graph_with_ontology_uri() -> Generator[HanaRdfGraph, None, None]:
 @pytest.fixture
 def default_graph_with_ontology_file() -> HanaRdfGraph:
     ontology_local_file_path = (
-        Path(__file__).parent / "fixtures" / "hana_rdf_graph_sample_schema.ttl"
+        Path(__file__).parent / ".." / "fixtures" / "hana_rdf_graph_sample_schema.ttl"
     )
     return HanaRdfGraph(
         connection=config.conn,
@@ -114,7 +114,7 @@ def default_graph_with_ontology_file() -> HanaRdfGraph:
 @pytest.fixture
 def expected_schema_graph() -> rdflib.Graph:
     expected_schema_file_path = (
-        Path(__file__).parent / "fixtures" / "hana_rdf_graph_sample_schema.ttl"
+        Path(__file__).parent / ".." / "fixtures" / "hana_rdf_graph_sample_schema.ttl"
     )
     expected_schema_graph = rdflib.Graph()
     expected_schema_graph.parse(expected_schema_file_path, format="turtle")

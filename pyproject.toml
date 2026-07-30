@@ -65,6 +65,8 @@ pytest = "^9.0.2"
 pytest-asyncio = "^1.3.0"
 pytest-socket = "^0.7.0"
 pytest-watcher = "^0.6.3"
+agentevals = "^0.0.9"
+sap-ai-sdk-gen = {extras = ["all"], version = "^6.10.0"}
 
 [tool.poetry.group.lint.dependencies]
 ruff = "^0.5"

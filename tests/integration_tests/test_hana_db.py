@@ -8,11 +8,11 @@ import pytest
 
 from langchain_hana import HanaDB
 from langchain_hana.utils import DistanceStrategy
-from tests.integration_tests.fake_embeddings import ConsistentFakeEmbeddings
-from tests.integration_tests.fixtures.filtering_test_cases import (
+from tests.fixtures.filtering_test_cases import (
     DOCUMENTS,
     FILTERING_TEST_CASES,
 )
+from tests.integration_tests.fake_embeddings import ConsistentFakeEmbeddings
 from tests.integration_tests.hana_test_constants import HanaTestConstants
 from tests.integration_tests.hana_test_utils import HanaTestUtils
 
