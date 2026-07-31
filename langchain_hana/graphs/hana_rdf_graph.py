@@ -71,7 +71,7 @@ class HanaRdfGraph:
     """
 
     # Characters forbidden inside a SPARQL IRIREF per the SPARQL 1.1 grammar.
-    _FORBIDDEN_IRI_CHARS = re.compile(r'[\x00-\x20<>"{}|\\^`]')
+    _FORBIDDEN_IRI_CHARS = re.compile(r'[\x00-\x20\x7f<>"{}|\\^`]')
 
     def __init__(
         self,
