@@ -1,6 +1,8 @@
 import logging
 from typing import Any, List, Tuple
 
+from langchain_hana.vectorstores.utils import _validate_identifier
+
 logger = logging.getLogger(__name__)
 
 
@@ -171,6 +173,7 @@ class CreateWhereClause:
         self, column: str, operator: str, operands: Any
     ) -> Tuple[str, tuple[Any, ...]]:
         if operator == "$contains":
+            _validate_identifier(column)
             operand = _determine_single_filter_operand(operator, operands)
             if operand.the_type != "str" or not operand.value:
                 raise ValueError(
@@ -302,6 +305,7 @@ class CreateWhereClause:
         raise ValueError(f"Operator {operator} is not supported")
 
     def _create_selector(self, column: str) -> str:
+        _validate_identifier(column)
         if column in self.specific_metadata_columns:
             return f'"{column}"'
         else:

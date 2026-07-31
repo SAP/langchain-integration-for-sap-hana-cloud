@@ -1,8 +1,10 @@
 """Test HanaVector functionality."""
 
+from unittest.mock import Mock, patch
+
 import pytest
 
-from langchain_hana import HanaDB
+from langchain_hana import HanaDB, HanaInternalEmbeddings
 from langchain_hana.utils import _validate_k, _validate_k_and_fetch_k
 
 
@@ -117,3 +119,69 @@ def test_max_marginal_relevance_search_invalid(
 ) -> None:
     with pytest.raises(ValueError, match=match):
         dummy_max_marginal_relevance_search(query, k=k, fetch_k=fetch_k)
+
+
+# ---------------------------------------------------------------------------
+# SQL injection guard: remote_source and remote_source_schema
+# ---------------------------------------------------------------------------
+
+_BAD_IDENTIFIERS = [
+    "schema'; DROP TABLE users--",
+    "schema OR 1=1",
+    "schema name",
+    "1schema",
+    "schema-name",
+    "schema.name",
+]
+
+
+def _make_hana_db(embedding: HanaInternalEmbeddings) -> HanaDB:
+    with (
+        patch.object(HanaDB, "_initialize_table"),
+        patch.object(HanaDB, "_validate_internal_embedding_function"),
+        patch.object(
+            HanaDB, "_sanitize_vector_column_type", return_value="REAL_VECTOR"
+        ),
+    ):
+        return HanaDB(connection=Mock(), embedding=embedding)
+
+
+@pytest.mark.parametrize("bad_value", _BAD_IDENTIFIERS)
+def test_invalid_remote_source_schema_raises(bad_value: str) -> None:
+    embedding = HanaInternalEmbeddings(
+        internal_embedding_model_id="model",
+        remote_source_schema=bad_value,
+        remote_source="valid_source",
+    )
+    with pytest.raises(ValueError, match="Invalid identifier"):
+        _make_hana_db(embedding)
+
+
+@pytest.mark.parametrize("bad_value", _BAD_IDENTIFIERS)
+def test_invalid_remote_source_raises(bad_value: str) -> None:
+    embedding = HanaInternalEmbeddings(
+        internal_embedding_model_id="model",
+        remote_source_schema="valid_schema",
+        remote_source=bad_value,
+    )
+    with pytest.raises(ValueError, match="Invalid identifier"):
+        _make_hana_db(embedding)
+
+
+@pytest.mark.parametrize(
+    "schema, source",
+    [
+        ("valid_schema", "valid_source"),
+        ("", ""),
+        ("MySchema123", "MySource_456"),
+    ],
+)
+def test_valid_remote_source_and_schema_accepted(schema: str, source: str) -> None:
+    embedding = HanaInternalEmbeddings(
+        internal_embedding_model_id="model",
+        remote_source_schema=schema,
+        remote_source=source,
+    )
+    db = _make_hana_db(embedding)
+    assert db.internal_embedding_remote_source_schema == schema
+    assert db.internal_embedding_remote_source == source

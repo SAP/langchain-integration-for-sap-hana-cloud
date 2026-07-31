@@ -70,6 +70,9 @@ class HanaRdfGraph:
         See https://python.langchain.com/docs/security for more information.
     """
 
+    # Characters forbidden inside a SPARQL IRIREF per the SPARQL 1.1 grammar.
+    _FORBIDDEN_IRI_CHARS = re.compile(r'[\x00-\x20<>"{}|\\^`]')
+
     def __init__(
         self,
         connection: dbapi.Connection,
@@ -88,6 +91,7 @@ class HanaRdfGraph:
         if not graph_uri or graph_uri.upper() == "DEFAULT":
             self.from_clause = "FROM DEFAULT"
         else:
+            HanaRdfGraph._validate_iri(graph_uri)
             self.from_clause = f"FROM <{graph_uri}>"
 
         self.refresh_schema(
@@ -97,6 +101,15 @@ class HanaRdfGraph:
             ontology_local_file_format,
             auto_extract_ontology,
         )
+
+    @staticmethod
+    def _validate_iri(uri: str) -> None:
+        """Raise ValueError if uri contains characters illegal in a SPARQL IRIREF."""
+        if HanaRdfGraph._FORBIDDEN_IRI_CHARS.search(uri):
+            raise ValueError(
+                f"Invalid IRI {uri!r}: contains characters not allowed "
+                "in a SPARQL IRI reference."
+            )
 
     def inject_from_clause(self, query: str) -> str:
         """
@@ -143,6 +156,10 @@ class HanaRdfGraph:
         if content_type is None:
             content_type = "application/sparql-results+csv"
 
+        if "\r" in content_type or "\n" in content_type:
+            raise ValueError(
+                "Invalid content_type: CR/LF characters are not permitted."
+            )
         request_headers = (
             f"Accept: {content_type}\r\nContent-Type: application/sparql-query"
         )
@@ -252,6 +269,7 @@ class HanaRdfGraph:
             )
         else:
             if ontology_uri:
+                HanaRdfGraph._validate_iri(ontology_uri)
                 ontology_query = (
                     f"CONSTRUCT {{?s ?p ?o}} FROM <{ontology_uri}> WHERE"
                     + "{?s ?p ?o .}"
