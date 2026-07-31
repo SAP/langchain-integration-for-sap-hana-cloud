@@ -6,6 +6,7 @@ import pytest
 
 from langchain_hana import HanaDB, HanaInternalEmbeddings
 from langchain_hana.utils import _validate_k, _validate_k_and_fetch_k
+from langchain_hana.vectorstores.utils import _validate_identifier
 
 
 def test_int_sanitation_with_illegal_value() -> None:
@@ -132,7 +133,27 @@ _BAD_IDENTIFIERS = [
     "1schema",
     "schema-name",
     "schema.name",
+    "col\n",
+    "",
 ]
+
+_VALID_IDENTIFIERS = [
+    "valid_col",
+    "_leading_underscore",
+    "Col123",
+    "a",
+]
+
+
+@pytest.mark.parametrize("name", _VALID_IDENTIFIERS)
+def test_validate_identifier_accepts_valid_names(name: str) -> None:
+    _validate_identifier(name)  # must not raise
+
+
+@pytest.mark.parametrize("name", _BAD_IDENTIFIERS)
+def test_validate_identifier_rejects_invalid_names(name: str) -> None:
+    with pytest.raises(ValueError):
+        _validate_identifier(name)
 
 
 def _make_hana_db(embedding: HanaInternalEmbeddings) -> HanaDB:
@@ -146,7 +167,7 @@ def _make_hana_db(embedding: HanaInternalEmbeddings) -> HanaDB:
         return HanaDB(connection=Mock(), embedding=embedding)
 
 
-@pytest.mark.parametrize("bad_value", _BAD_IDENTIFIERS)
+@pytest.mark.parametrize("bad_value", [v for v in _BAD_IDENTIFIERS if v])
 def test_invalid_remote_source_schema_raises(bad_value: str) -> None:
     embedding = HanaInternalEmbeddings(
         internal_embedding_model_id="model",
@@ -157,7 +178,7 @@ def test_invalid_remote_source_schema_raises(bad_value: str) -> None:
         _make_hana_db(embedding)
 
 
-@pytest.mark.parametrize("bad_value", _BAD_IDENTIFIERS)
+@pytest.mark.parametrize("bad_value", [v for v in _BAD_IDENTIFIERS if v])
 def test_invalid_remote_source_raises(bad_value: str) -> None:
     embedding = HanaInternalEmbeddings(
         internal_embedding_model_id="model",
@@ -170,11 +191,7 @@ def test_invalid_remote_source_raises(bad_value: str) -> None:
 
 @pytest.mark.parametrize(
     "schema, source",
-    [
-        ("valid_schema", "valid_source"),
-        ("", ""),
-        ("MySchema123", "MySource_456"),
-    ],
+    [(v, v) for v in _VALID_IDENTIFIERS],
 )
 def test_valid_remote_source_and_schema_accepted(schema: str, source: str) -> None:
     embedding = HanaInternalEmbeddings(
