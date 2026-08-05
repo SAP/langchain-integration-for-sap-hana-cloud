@@ -36,6 +36,7 @@ from langchain_hana.vectorstores.create_where_clause import (
 from langchain_hana.vectorstores.utils import (
     _generate_cross_encode_sql_and_params,
     _sanitize_metadata_keys,
+    _validate_identifier,
     _validate_rerank_model_id,
 )
 
@@ -138,6 +139,10 @@ class HanaDB(VectorStore):
                 embedding.get_remote_source_schema()
             )
             self.internal_embedding_remote_source = embedding.get_remote_source()
+            if self.internal_embedding_remote_source_schema:
+                _validate_identifier(self.internal_embedding_remote_source_schema)
+            if self.internal_embedding_remote_source:
+                _validate_identifier(self.internal_embedding_remote_source)
             self._validate_internal_embedding_function()
         else:
             # External embeddings

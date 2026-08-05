@@ -2,21 +2,27 @@
 
 import logging
 import re
-from typing import Pattern
 
 from hdbcli import dbapi
 
 logger = logging.getLogger(__name__)
 
-# Compiled pattern for validating metadata identifiers
-_compiled_pattern: Pattern = re.compile("^[_a-zA-Z][_a-zA-Z0-9]*$")
+_VALID_IDENTIFIER_RE = re.compile(r"[_a-zA-Z][_a-zA-Z0-9]*")
+
+
+def _validate_identifier(name: str) -> None:
+    """Raise ValueError if name is not a safe SQL/JSON identifier."""
+    if not _VALID_IDENTIFIER_RE.fullmatch(name):
+        raise ValueError(
+            f"Invalid identifier {name!r}: only letters, digits, and underscores "
+            "are allowed, and it must not start with a digit."
+        )
 
 
 def _sanitize_metadata_keys(metadata_keys: list[str]) -> None:
     """Validate that all metadata keys are valid identifiers."""
     for key in metadata_keys:
-        if not _compiled_pattern.match(key):
-            raise ValueError(f"Invalid metadata key {key}")
+        _validate_identifier(key)
 
 
 def _validate_rerank_model_id(model_id: str, connection: dbapi.Connection) -> None:

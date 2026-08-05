@@ -94,7 +94,13 @@ def test_rerank_with_invalid_top_n(
 def test_rerank_with_invalid_metadata_key(
     reranker: HanaReranker, documents: list[Document]
 ) -> None:
-    with pytest.raises(ValueError, match="Invalid metadata key invalid-key"):
+    with pytest.raises(
+        ValueError,
+        match=(
+            "Invalid identifier 'invalid-key': only letters, digits, and"
+            " underscores are allowed, and it must not start with a digit."
+        ),
+    ):
         reranker.rerank(
             documents, HanaTestConstants.TEXTS[0], rank_fields=["invalid-key"]
         )
