@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from langchain_hana import HanaDB
-from langchain_hana.utils import DistanceStrategy
+from langchain_hana.utils import DistanceStrategy, _table_ref
 from tests.fixtures.filtering_test_cases import (
     DOCUMENTS,
     FILTERING_TEST_CASES,
@@ -45,6 +45,7 @@ class Config:
     def __init__(self) -> None:
         self.conn: dbapi.Connection
         self.schema_name: str = ""
+        self.explicit_schema_name: str = ""
 
 
 config = Config()
@@ -83,31 +84,63 @@ def setup_connection(
     HanaTestUtils.drop_old_test_schemas(config.conn, schema_prefix)
     config.schema_name = HanaTestUtils.generate_schema_name(config.conn, schema_prefix)
     HanaTestUtils.create_and_set_schema(config.conn, config.schema_name)
+    config.explicit_schema_name = HanaTestUtils.generate_schema_name(
+        config.conn, schema_prefix
+    )
+    HanaTestUtils.execute_sql(
+        config.conn, f'CREATE SCHEMA "{config.explicit_schema_name}"'
+    )
 
     yield
 
+    HanaTestUtils.drop_schema_if_exists(config.conn, config.explicit_schema_name)
     HanaTestUtils.drop_schema_if_exists(config.conn, config.schema_name)
     config.conn.close()
 
 
+@pytest.fixture(
+    params=[False, True],
+    ids=["implicit_schema", "explicit_schema"],
+)
+def schema_name(request: pytest.FixtureRequest) -> str:
+    if request.param:
+        return config.explicit_schema_name
+    return ""
+
+
 @pytest.fixture(params=["REAL_VECTOR", "HALF_VECTOR"])
-def vectorDB(request: pytest.FixtureRequest) -> Generator[HanaDB, None, None]:
+def vectorDB(
+    request: pytest.FixtureRequest, schema_name: str
+) -> Generator[HanaDB, None, None]:
     vectorDB = HanaDB(
         connection=config.conn,
         embedding=embedding,
         table_name=HanaTestConstants.TABLE_NAME,
         vector_column_type=request.param,
+        schema_name=schema_name,
     )
 
     yield vectorDB
 
-    HanaTestUtils.drop_table(config.conn, HanaTestConstants.TABLE_NAME)
+    if schema_name:
+        HanaTestUtils.execute_sql(
+            config.conn,
+            f'DROP TABLE "{schema_name}"."{HanaTestConstants.TABLE_NAME}"',
+        )
+    else:
+        HanaTestUtils.drop_table(config.conn, HanaTestConstants.TABLE_NAME)
 
 
 @pytest.fixture
-def table_name_with_cleanup() -> Generator[str, None, None]:
+def table_name_with_cleanup(schema_name: str) -> Generator[str, None, None]:
     yield HanaTestConstants.TABLE_NAME_CUSTOM_DB
-    HanaTestUtils.drop_table(config.conn, HanaTestConstants.TABLE_NAME_CUSTOM_DB)
+    if schema_name:
+        HanaTestUtils.execute_sql(
+            config.conn,
+            f'DROP TABLE "{schema_name}"."{HanaTestConstants.TABLE_NAME_CUSTOM_DB}"',
+        )
+    else:
+        HanaTestUtils.drop_table(config.conn, HanaTestConstants.TABLE_NAME_CUSTOM_DB)
 
 
 @pytest.fixture(
@@ -177,7 +210,9 @@ def invalid_rerank_config_non_existent_model_id() -> dict[str, str]:
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_non_existing_table(table_name_with_cleanup: str) -> None:
+def test_hanavector_non_existing_table(
+    table_name_with_cleanup: str, schema_name: str
+) -> None:
     """Test end to end construction and search."""
     table_name = table_name_with_cleanup
 
@@ -187,17 +222,21 @@ def test_hanavector_non_existing_table(table_name_with_cleanup: str) -> None:
         embedding=embedding,
         distance_strategy=DistanceStrategy.COSINE,
         table_name=table_name,
+        schema_name=schema_name,
     )
 
     assert vectordb._table_exists(table_name)
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_table_with_missing_columns(table_name_with_cleanup: str) -> None:
+def test_hanavector_table_with_missing_columns(
+    table_name_with_cleanup: str, schema_name: str
+) -> None:
     table_name = table_name_with_cleanup
+    table_ref = _table_ref(table_name, schema_name)
     try:
         cur = config.conn.cursor()
-        sql_str = f"CREATE TABLE {table_name}(WRONG_COL NVARCHAR(500));"
+        sql_str = f"CREATE TABLE {table_ref}(WRONG_COL NVARCHAR(500));"
         cur.execute(sql_str)
     finally:
         cur.close()
@@ -210,6 +249,7 @@ def test_hanavector_table_with_missing_columns(table_name_with_cleanup: str) -> 
             embedding=embedding,
             distance_strategy=DistanceStrategy.COSINE,
             table_name=table_name,
+            schema_name=schema_name,
         )
         exception_occured = False
     except AttributeError:
@@ -218,15 +258,18 @@ def test_hanavector_table_with_missing_columns(table_name_with_cleanup: str) -> 
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_table_with_nvarchar_content(table_name_with_cleanup: str) -> None:
+def test_hanavector_table_with_nvarchar_content(
+    table_name_with_cleanup: str, schema_name: str
+) -> None:
     table_name = table_name_with_cleanup
     content_column = "TEST_TEXT"
     metadata_column = "TEST_META"
     vector_column = "TEST_VECTOR"
+    table_ref = _table_ref(table_name, schema_name)
     try:
         cur = config.conn.cursor()
         sql_str = (
-            f"CREATE TABLE {table_name}({content_column} NVARCHAR(2048), "
+            f"CREATE TABLE {table_ref}({content_column} NVARCHAR(2048), "
             f"{metadata_column} NVARCHAR(2048), {vector_column} REAL_VECTOR);"
         )
         cur.execute(sql_str)
@@ -238,6 +281,7 @@ def test_hanavector_table_with_nvarchar_content(table_name_with_cleanup: str) ->
         embedding=embedding,
         distance_strategy=DistanceStrategy.COSINE,
         table_name=table_name,
+        schema_name=schema_name,
         content_column=content_column,
         metadata_column=metadata_column,
         vector_column=vector_column,
@@ -248,7 +292,7 @@ def test_hanavector_table_with_nvarchar_content(table_name_with_cleanup: str) ->
     # check that embeddings have been created in the table
     number_of_texts = len(HanaTestConstants.TEXTS)
     number_of_rows = -1
-    sql_str = f"SELECT COUNT(*) FROM {table_name}"
+    sql_str = f"SELECT COUNT(*) FROM {_table_ref(table_name, schema_name)}"
     cur = config.conn.cursor()
     cur.execute(sql_str)
     if cur.has_result_set():
@@ -260,15 +304,17 @@ def test_hanavector_table_with_nvarchar_content(table_name_with_cleanup: str) ->
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_table_with_wrong_typed_columns(
     table_name_with_cleanup: str,
+    schema_name: str,
 ) -> None:
     table_name = table_name_with_cleanup
     content_column = "DOC_TEXT"
     metadata_column = "DOC_META"
     vector_column = "DOC_VECTOR"
+    table_ref = _table_ref(table_name, schema_name)
     try:
         cur = config.conn.cursor()
         sql_str = (
-            f"CREATE TABLE {table_name}({content_column} INTEGER, "
+            f"CREATE TABLE {table_ref}({content_column} INTEGER, "
             f"{metadata_column} INTEGER, {vector_column} INTEGER);"
         )
         cur.execute(sql_str)
@@ -283,6 +329,7 @@ def test_hanavector_table_with_wrong_typed_columns(
             embedding=embedding,
             distance_strategy=DistanceStrategy.COSINE,
             table_name=table_name,
+            schema_name=schema_name,
         )
         exception_occured = False
     except AttributeError as err:
@@ -294,6 +341,7 @@ def test_hanavector_table_with_wrong_typed_columns(
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_non_existing_table_fixed_vector_length(
     table_name_with_cleanup: str,
+    schema_name: str,
 ) -> None:
     """Test end to end construction and search."""
     table_name = table_name_with_cleanup
@@ -306,6 +354,7 @@ def test_hanavector_non_existing_table_fixed_vector_length(
         embedding=embedding,
         distance_strategy=DistanceStrategy.COSINE,
         table_name=table_name,
+        schema_name=schema_name,
         vector_column=vector_column,
         vector_column_length=vector_column_length,
     )
@@ -323,7 +372,7 @@ def test_hanavector_add_texts(vectorDB: HanaDB) -> None:
     # check that embeddings have been created in the table
     number_of_texts = len(HanaTestConstants.TEXTS)
     number_of_rows = -1
-    sql_str = f"SELECT COUNT(*) FROM {HanaTestConstants.TABLE_NAME}"
+    sql_str = f"SELECT COUNT(*) FROM {vectorDB._table_ref}"
     cur = config.conn.cursor()
     cur.execute(sql_str)
     if cur.has_result_set():
@@ -341,13 +390,14 @@ def test_hanavector_add_texts_with_map_merge(vectorDB: HanaDB) -> None:
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_from_texts(table_name_with_cleanup: str) -> None:
+def test_hanavector_from_texts(table_name_with_cleanup: str, schema_name: str) -> None:
     table_name = table_name_with_cleanup
     vectorDB = HanaDB.from_texts(
         connection=config.conn,
         texts=HanaTestConstants.TEXTS,
         embedding=embedding,
         table_name=table_name,
+        schema_name=schema_name,
     )
 
     # test if vectorDB is instance of HanaDB
@@ -356,7 +406,10 @@ def test_hanavector_from_texts(table_name_with_cleanup: str) -> None:
     # check that embeddings have been created in the table
     number_of_texts = len(HanaTestConstants.TEXTS)
     number_of_rows = -1
-    sql_str = f"SELECT COUNT(*) FROM {table_name}"
+    if schema_name:
+        sql_str = f'SELECT COUNT(*) FROM "{schema_name}"."{table_name}"'
+    else:
+        sql_str = f"SELECT COUNT(*) FROM {table_name}"
     cur = config.conn.cursor()
     cur.execute(sql_str)
     if cur.has_result_set():
@@ -366,7 +419,9 @@ def test_hanavector_from_texts(table_name_with_cleanup: str) -> None:
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_from_texts_with_map_merge(table_name_with_cleanup: str) -> None:
+def test_hanavector_from_texts_with_map_merge(
+    table_name_with_cleanup: str, schema_name: str
+) -> None:
     with pytest.raises(
         ValueError, match="map merge cannot be used with external embeddings"
     ):
@@ -376,6 +431,7 @@ def test_hanavector_from_texts_with_map_merge(table_name_with_cleanup: str) -> N
             texts=HanaTestConstants.TEXTS,
             embedding=embedding,
             table_name=table_name,
+            schema_name=schema_name,
             use_map_merge=True,
         )
 
@@ -503,6 +559,7 @@ def test_hanavector_similarity_search_by_vector_simple_invalid_rerank_model_id(
 def test_hanavector_similarity_search_simple_euclidean_distance(
     table_name_with_cleanup: str,
     rerank_config_param: dict[str, Any] | None,
+    schema_name: str,
 ) -> None:
     table_name = table_name_with_cleanup
     rerank_config = build_rerank_config(rerank_config_param, top_n=1)
@@ -513,6 +570,7 @@ def test_hanavector_similarity_search_simple_euclidean_distance(
         texts=HanaTestConstants.TEXTS,
         embedding=embedding,
         table_name=table_name,
+        schema_name=schema_name,
         distance_strategy=DistanceStrategy.EUCLIDEAN_DISTANCE,
     )
 
@@ -534,6 +592,7 @@ def test_hanavector_similarity_search_simple_euclidean_distance(
 def test_hanavector_similarity_search_simple_euclidean_distance_invalid_rerank_config(
     table_name_with_cleanup: str,
     invalid_rerank_config_with_error_message: tuple[dict[str, Any], str],
+    schema_name: str,
 ) -> None:
     table_name = table_name_with_cleanup
     invalid_rerank_config, expected_error_message = (
@@ -546,6 +605,7 @@ def test_hanavector_similarity_search_simple_euclidean_distance_invalid_rerank_c
         texts=HanaTestConstants.TEXTS,
         embedding=embedding,
         table_name=table_name,
+        schema_name=schema_name,
         distance_strategy=DistanceStrategy.EUCLIDEAN_DISTANCE,
     )
 
@@ -559,6 +619,7 @@ def test_hanavector_similarity_search_simple_euclidean_distance_invalid_rerank_c
 def test_hanavector_similarity_search_simple_euclidean_distance_invalid_rerank_model_id(
     table_name_with_cleanup: str,
     invalid_rerank_config_non_existent_model_id: dict[str, str],
+    schema_name: str,
 ) -> None:
     table_name = table_name_with_cleanup
 
@@ -568,6 +629,7 @@ def test_hanavector_similarity_search_simple_euclidean_distance_invalid_rerank_m
         texts=HanaTestConstants.TEXTS,
         embedding=embedding,
         table_name=table_name,
+        schema_name=schema_name,
         distance_strategy=DistanceStrategy.EUCLIDEAN_DISTANCE,
     )
 
@@ -892,6 +954,7 @@ def test_hanavector_similarity_search_with_relevance_score(vectorDB: HanaDB) -> 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_hanavector_similarity_search_with_relevance_score_with_euclidian_distance(
     table_name_with_cleanup: str,
+    schema_name: str,
 ) -> None:
     table_name = table_name_with_cleanup
 
@@ -901,6 +964,7 @@ def test_hanavector_similarity_search_with_relevance_score_with_euclidian_distan
         texts=HanaTestConstants.TEXTS,
         embedding=embedding,
         table_name=table_name,
+        schema_name=schema_name,
         distance_strategy=DistanceStrategy.EUCLIDEAN_DISTANCE,
     )
 
@@ -919,6 +983,7 @@ def test_hanavector_similarity_search_with_relevance_score_with_euclidian_distan
 def test_hanavector_similarity_search_with_score_with_euclidian_distance(
     table_name_with_cleanup: str,
     rerank_config_param: dict[str, Any] | None,
+    schema_name: str,
 ) -> None:
     table_name = table_name_with_cleanup
     rerank_config = build_rerank_config(rerank_config_param, top_n=3)
@@ -929,6 +994,7 @@ def test_hanavector_similarity_search_with_score_with_euclidian_distance(
         texts=HanaTestConstants.TEXTS,
         embedding=embedding,
         table_name=table_name,
+        schema_name=schema_name,
         distance_strategy=DistanceStrategy.EUCLIDEAN_DISTANCE,
     )
 
@@ -1109,27 +1175,23 @@ def test_hanavector_filter_prepared_statement_params(
         texts=HanaTestConstants.TEXTS, metadatas=HanaTestConstants.METADATAS
     )
 
+    table_ref = vectorDB._table_ref
     cur = config.conn.cursor()
     sql_str = (
-        f"SELECT * FROM {HanaTestConstants.TABLE_NAME} "
-        "WHERE JSON_VALUE(VEC_META, '$.start') = '100'"
+        f"SELECT * FROM {table_ref} " "WHERE JSON_VALUE(VEC_META, '$.start') = '100'"
     )
     cur.execute(sql_str)
     rows = cur.fetchall()
     assert len(rows) == 1
 
     query_value = 100
-    sql_str = (
-        f"SELECT * FROM {HanaTestConstants.TABLE_NAME} "
-        "WHERE JSON_VALUE(VEC_META, '$.start') = ?"
-    )
+    sql_str = f"SELECT * FROM {table_ref} " "WHERE JSON_VALUE(VEC_META, '$.start') = ?"
     cur.execute(sql_str, (query_value,))
     rows = cur.fetchall()
     assert len(rows) == 1
 
     sql_str = (
-        f"SELECT * FROM {HanaTestConstants.TABLE_NAME} "
-        "WHERE JSON_VALUE(VEC_META, '$.quality') = 'good'"
+        f"SELECT * FROM {table_ref} " "WHERE JSON_VALUE(VEC_META, '$.quality') = 'good'"
     )
     cur.execute(sql_str)
     rows = cur.fetchall()
@@ -1137,16 +1199,14 @@ def test_hanavector_filter_prepared_statement_params(
 
     query_value = "good"  # type: ignore[assignment]
     sql_str = (
-        f"SELECT * FROM {HanaTestConstants.TABLE_NAME} "
-        "WHERE JSON_VALUE(VEC_META, '$.quality') = ?"
+        f"SELECT * FROM {table_ref} " "WHERE JSON_VALUE(VEC_META, '$.quality') = ?"
     )
     cur.execute(sql_str, (query_value,))
     rows = cur.fetchall()
     assert len(rows) == 1
 
     sql_str = (
-        f"SELECT * FROM {HanaTestConstants.TABLE_NAME} "
-        "WHERE JSON_VALUE(VEC_META, '$.ready') = false"
+        f"SELECT * FROM {table_ref} " "WHERE JSON_VALUE(VEC_META, '$.ready') = false"
     )
     cur.execute(sql_str)
     rows = cur.fetchall()
@@ -1154,26 +1214,20 @@ def test_hanavector_filter_prepared_statement_params(
 
     # query_value = True
     query_value = "true"  # type: ignore[assignment]
-    sql_str = (
-        f"SELECT * FROM {HanaTestConstants.TABLE_NAME} "
-        "WHERE JSON_VALUE(VEC_META, '$.ready') = ?"
-    )
+    sql_str = f"SELECT * FROM {table_ref} " "WHERE JSON_VALUE(VEC_META, '$.ready') = ?"
     cur.execute(sql_str, (query_value,))
     rows = cur.fetchall()
     assert len(rows) == 3
 
     # query_value = False
     query_value = "false"  # type: ignore[assignment]
-    sql_str = (
-        f"SELECT * FROM {HanaTestConstants.TABLE_NAME} "
-        "WHERE JSON_VALUE(VEC_META, '$.ready') = ?"
-    )
+    sql_str = f"SELECT * FROM {table_ref} " "WHERE JSON_VALUE(VEC_META, '$.ready') = ?"
     cur.execute(sql_str, (query_value,))
     rows = cur.fetchall()
     assert len(rows) == 1
 
 
-def test_invalid_metadata_keys(table_name_with_cleanup: str) -> None:
+def test_invalid_metadata_keys(table_name_with_cleanup: str, schema_name: str) -> None:
     table_name = table_name_with_cleanup
 
     invalid_metadatas = [
@@ -1187,6 +1241,7 @@ def test_invalid_metadata_keys(table_name_with_cleanup: str) -> None:
             metadatas=invalid_metadatas,
             embedding=embedding,
             table_name=table_name,
+            schema_name=schema_name,
         )
     except ValueError:
         exception_occured = True
@@ -1203,6 +1258,7 @@ def test_invalid_metadata_keys(table_name_with_cleanup: str) -> None:
             metadatas=invalid_metadatas,
             embedding=embedding,
             table_name=table_name,
+            schema_name=schema_name,
         )
     except ValueError:
         exception_occured = True
@@ -1276,11 +1332,12 @@ def test_hanavector_with_with_metadata_filters(
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_preexisting_specific_columns_for_metadata_fill(
     table_name_with_cleanup: str,
+    schema_name: str,
 ) -> None:
     table_name = table_name_with_cleanup
 
     sql_str = (
-        f'CREATE TABLE "{table_name}" ('
+        f"CREATE TABLE {_table_ref(table_name, schema_name)} ("
         f'"VEC_TEXT" NCLOB, '
         f'"VEC_META" NCLOB, '
         f'"VEC_VECTOR" REAL_VECTOR, '
@@ -1299,12 +1356,14 @@ def test_preexisting_specific_columns_for_metadata_fill(
         metadatas=HanaTestConstants.METADATAS,
         embedding=embedding,
         table_name=table_name,
+        schema_name=schema_name,
         specific_metadata_columns=["Owner", "quality"],
     )
 
     c = 0
+    table_ref = _table_ref(table_name, schema_name)
     try:
-        sql_str = f'SELECT COUNT(*) FROM {table_name} WHERE "quality"=' f"'ugly'"
+        sql_str = f'SELECT COUNT(*) FROM {table_ref} WHERE "quality"=' f"'ugly'"
         cur = config.conn.cursor()
         cur.execute(sql_str)
         if cur.has_result_set():
@@ -1337,11 +1396,12 @@ def test_preexisting_specific_columns_for_metadata_fill(
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_preexisting_specific_columns_for_metadata_via_array(
     table_name_with_cleanup: str,
+    schema_name: str,
 ) -> None:
     table_name = table_name_with_cleanup
 
     sql_str = (
-        f'CREATE TABLE "{table_name}" ('
+        f"CREATE TABLE {_table_ref(table_name, schema_name)} ("
         f'"VEC_TEXT" NCLOB, '
         f'"VEC_META" NCLOB, '
         f'"VEC_VECTOR" REAL_VECTOR, '
@@ -1360,12 +1420,14 @@ def test_preexisting_specific_columns_for_metadata_via_array(
         metadatas=HanaTestConstants.METADATAS,
         embedding=embedding,
         table_name=table_name,
+        schema_name=schema_name,
         specific_metadata_columns=["quality"],
     )
 
     c = 0
+    table_ref = _table_ref(table_name, schema_name)
     try:
-        sql_str = f'SELECT COUNT(*) FROM {table_name} WHERE "quality"=' f"'ugly'"
+        sql_str = f'SELECT COUNT(*) FROM {table_ref} WHERE "quality"=' f"'ugly'"
         cur = config.conn.cursor()
         cur.execute(sql_str)
         if cur.has_result_set():
@@ -1376,7 +1438,10 @@ def test_preexisting_specific_columns_for_metadata_via_array(
     assert c == 3
 
     try:
-        sql_str = f'SELECT COUNT(*) FROM {table_name} WHERE "Owner"=' f"'Steve'"
+        sql_str = (
+            f'SELECT COUNT(*) FROM {_table_ref(table_name, schema_name)} WHERE "Owner"='
+            f"'Steve'"
+        )
         cur = config.conn.cursor()
         cur.execute(sql_str)
         if cur.has_result_set():
@@ -1409,11 +1474,12 @@ def test_preexisting_specific_columns_for_metadata_via_array(
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_preexisting_specific_columns_for_metadata_multiple_columns(
     table_name_with_cleanup: str,
+    schema_name: str,
 ) -> None:
     table_name = table_name_with_cleanup
 
     sql_str = (
-        f'CREATE TABLE "{table_name}" ('
+        f"CREATE TABLE {_table_ref(table_name, schema_name)} ("
         f'"VEC_TEXT" NCLOB, '
         f'"VEC_META" NCLOB, '
         f'"VEC_VECTOR" REAL_VECTOR, '
@@ -1432,6 +1498,7 @@ def test_preexisting_specific_columns_for_metadata_multiple_columns(
         metadatas=HanaTestConstants.METADATAS,
         embedding=embedding,
         table_name=table_name,
+        schema_name=schema_name,
         specific_metadata_columns=["quality", "start"],
     )
 
@@ -1458,11 +1525,12 @@ def test_preexisting_specific_columns_for_metadata_multiple_columns(
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_preexisting_specific_columns_for_metadata_empty_columns(
     table_name_with_cleanup: str,
+    schema_name: str,
 ) -> None:
     table_name = table_name_with_cleanup
 
     sql_str = (
-        f'CREATE TABLE "{table_name}" ('
+        f"CREATE TABLE {_table_ref(table_name, schema_name)} ("
         f'"VEC_TEXT" NCLOB, '
         f'"VEC_META" NCLOB, '
         f'"VEC_VECTOR" REAL_VECTOR, '
@@ -1482,6 +1550,7 @@ def test_preexisting_specific_columns_for_metadata_empty_columns(
         metadatas=HanaTestConstants.METADATAS,
         embedding=embedding,
         table_name=table_name,
+        schema_name=schema_name,
         specific_metadata_columns=["quality", "ready", "start"],
     )
 
@@ -1511,11 +1580,12 @@ def test_preexisting_specific_columns_for_metadata_empty_columns(
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_preexisting_specific_columns_for_metadata_wrong_type_or_non_existing(
     table_name_with_cleanup: str,
+    schema_name: str,
 ) -> None:
     table_name = table_name_with_cleanup
 
     sql_str = (
-        f'CREATE TABLE "{table_name}" ('
+        f"CREATE TABLE {_table_ref(table_name, schema_name)} ("
         f'"VEC_TEXT" NCLOB, '
         f'"VEC_META" NCLOB, '
         f'"VEC_VECTOR" REAL_VECTOR, '
@@ -1536,6 +1606,7 @@ def test_preexisting_specific_columns_for_metadata_wrong_type_or_non_existing(
             metadatas=HanaTestConstants.METADATAS,
             embedding=embedding,
             table_name=table_name,
+            schema_name=schema_name,
             specific_metadata_columns=["quality"],
         )
         exception_occured = False
@@ -1551,6 +1622,7 @@ def test_preexisting_specific_columns_for_metadata_wrong_type_or_non_existing(
             metadatas=HanaTestConstants.METADATAS,
             embedding=embedding,
             table_name=table_name,
+            schema_name=schema_name,
             specific_metadata_columns=["NonExistingColumn"],
         )
         exception_occured = False
@@ -1562,11 +1634,12 @@ def test_preexisting_specific_columns_for_metadata_wrong_type_or_non_existing(
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
 def test_preexisting_specific_columns_for_returned_metadata_completeness(
     table_name_with_cleanup: str,
+    schema_name: str,
 ) -> None:
     table_name = table_name_with_cleanup
 
     sql_str = (
-        f'CREATE TABLE "{table_name}" ('
+        f"CREATE TABLE {_table_ref(table_name, schema_name)} ("
         f'"VEC_TEXT" NCLOB, '
         f'"VEC_META" NCLOB, '
         f'"VEC_VECTOR" REAL_VECTOR, '
@@ -1587,6 +1660,7 @@ def test_preexisting_specific_columns_for_returned_metadata_completeness(
         metadatas=HanaTestConstants.METADATAS,
         embedding=embedding,
         table_name=table_name,
+        schema_name=schema_name,
         specific_metadata_columns=["quality", "ready", "start", "NonExisting"],
     )
 
@@ -1621,7 +1695,9 @@ def test_create_hnsw_index_with_default_values(vectorDB: HanaDB) -> None:
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_create_hnsw_index_with_defined_values(table_name_with_cleanup: str) -> None:
+def test_create_hnsw_index_with_defined_values(
+    table_name_with_cleanup: str, schema_name: str
+) -> None:
     table_name = table_name_with_cleanup
 
     # Create table and insert data
@@ -1630,6 +1706,7 @@ def test_create_hnsw_index_with_defined_values(table_name_with_cleanup: str) -> 
         texts=HanaTestConstants.TEXTS,
         embedding=embedding,
         table_name=table_name,
+        schema_name=schema_name,
         distance_strategy=DistanceStrategy.EUCLIDEAN_DISTANCE,
     )
 
@@ -1726,11 +1803,13 @@ def test_create_hnsw_index_invalid_ef_search(vectorDB: HanaDB) -> None:
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
-def test_hanavector_keyword_search(table_name_with_cleanup: str) -> None:
+def test_hanavector_keyword_search(
+    table_name_with_cleanup: str, schema_name: str
+) -> None:
     table_name = table_name_with_cleanup
 
     sql_str = (
-        f'CREATE TABLE "{table_name}" ('
+        f"CREATE TABLE {_table_ref(table_name, schema_name)} ("
         f'"VEC_TEXT" NCLOB, '
         f'"VEC_META" NCLOB, '
         f'"VEC_VECTOR" REAL_VECTOR, '
@@ -1750,6 +1829,7 @@ def test_hanavector_keyword_search(table_name_with_cleanup: str) -> None:
         metadatas=HanaTestConstants.METADATAS,
         embedding=embedding,
         table_name=table_name,
+        schema_name=schema_name,
         specific_metadata_columns=["quality"],
     )
 

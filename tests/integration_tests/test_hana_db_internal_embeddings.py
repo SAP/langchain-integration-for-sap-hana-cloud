@@ -15,6 +15,7 @@ class Config:
     def __init__(self) -> None:
         self.conn: dbapi.Connection
         self.schema_name: str = ""
+        self.explicit_schema_name: str = ""
         self.embedding: HanaInternalEmbeddings
 
 
@@ -131,6 +132,16 @@ def invalid_rerank_config_non_existent_model_id() -> dict[str, str]:
 
 
 @pytest.fixture(
+    params=[False, True],
+    ids=["implicit_schema", "explicit_schema"],
+)
+def schema_name(request: pytest.FixtureRequest) -> str:
+    if request.param:
+        return config.explicit_schema_name
+    return ""
+
+
+@pytest.fixture(
     scope="module",
     params=[
         {
@@ -193,31 +204,53 @@ def setup_connection(
     HanaTestUtils.drop_old_test_schemas(config.conn, schema_prefix)
     config.schema_name = HanaTestUtils.generate_schema_name(config.conn, schema_prefix)
     HanaTestUtils.create_and_set_schema(config.conn, config.schema_name)
+    config.explicit_schema_name = HanaTestUtils.generate_schema_name(
+        config.conn, schema_prefix
+    )
+    HanaTestUtils.execute_sql(
+        config.conn, f'CREATE SCHEMA "{config.explicit_schema_name}"'
+    )
 
     yield
 
+    HanaTestUtils.drop_schema_if_exists(config.conn, config.explicit_schema_name)
     HanaTestUtils.drop_schema_if_exists(config.conn, config.schema_name)
     config.conn.close()
 
 
 @pytest.fixture(params=["REAL_VECTOR", "HALF_VECTOR"])
-def vectorDB(request: pytest.FixtureRequest) -> Generator[HanaDB, None, None]:
+def vectorDB(
+    request: pytest.FixtureRequest, schema_name: str
+) -> Generator[HanaDB, None, None]:
     vectorDB = HanaDB(
         connection=config.conn,
         embedding=config.embedding,
         table_name=HanaTestConstants.TABLE_NAME,
         vector_column_type=request.param,
+        schema_name=schema_name,
     )
 
     yield vectorDB
 
-    HanaTestUtils.drop_table(config.conn, HanaTestConstants.TABLE_NAME)
+    if schema_name:
+        HanaTestUtils.execute_sql(
+            config.conn,
+            f'DROP TABLE "{schema_name}"."{HanaTestConstants.TABLE_NAME}"',
+        )
+    else:
+        HanaTestUtils.drop_table(config.conn, HanaTestConstants.TABLE_NAME)
 
 
 @pytest.fixture
-def table_name_with_cleanup() -> Generator[str, None, None]:
+def table_name_with_cleanup(schema_name: str) -> Generator[str, None, None]:
     yield HanaTestConstants.TABLE_NAME_CUSTOM_DB
-    HanaTestUtils.drop_table(config.conn, HanaTestConstants.TABLE_NAME_CUSTOM_DB)
+    if schema_name:
+        HanaTestUtils.execute_sql(
+            config.conn,
+            f'DROP TABLE "{schema_name}"."{HanaTestConstants.TABLE_NAME_CUSTOM_DB}"',
+        )
+    else:
+        HanaTestUtils.drop_table(config.conn, HanaTestConstants.TABLE_NAME_CUSTOM_DB)
 
 
 @pytest.mark.parametrize("use_map_merge", [False, True])
@@ -231,7 +264,7 @@ def test_hanavector_add_texts(vectorDB: HanaDB, use_map_merge: bool) -> None:
     # check that embeddings have been created in the table
     number_of_texts = len(HanaTestConstants.TEXTS)
     number_of_rows = -1
-    sql_str = f"SELECT COUNT(*) FROM {HanaTestConstants.TABLE_NAME}"
+    sql_str = f"SELECT COUNT(*) FROM {vectorDB._table_ref}"
     cur = config.conn.cursor()
     cur.execute(sql_str)
     if cur.has_result_set():
@@ -259,7 +292,7 @@ def test_hanavector_add_texts_map_merge_preserves_order(vectorDB: HanaDB) -> Non
 
 @pytest.mark.parametrize("use_map_merge", [False, True])
 def test_hanavector_from_texts(
-    table_name_with_cleanup: str, use_map_merge: bool
+    table_name_with_cleanup: str, schema_name: str, use_map_merge: bool
 ) -> None:
     table_name = table_name_with_cleanup
     vectorDB = HanaDB.from_texts(
@@ -267,6 +300,7 @@ def test_hanavector_from_texts(
         texts=HanaTestConstants.TEXTS,
         embedding=config.embedding,
         table_name=table_name,
+        schema_name=schema_name,
         use_map_merge=use_map_merge,
     )
 
@@ -276,7 +310,7 @@ def test_hanavector_from_texts(
     # check that embeddings have been created in the table
     number_of_texts = len(HanaTestConstants.TEXTS)
     number_of_rows = -1
-    sql_str = f"SELECT COUNT(*) FROM {table_name}"
+    sql_str = f"SELECT COUNT(*) FROM {vectorDB._table_ref}"
     cur = config.conn.cursor()
     cur.execute(sql_str)
     if cur.has_result_set():
