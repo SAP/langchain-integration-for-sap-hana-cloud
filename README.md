@@ -30,7 +30,7 @@ Install the LangChain SAP HANA Cloud integration package using `pip`:
 pip install -U langchain-hana
 ```
 
-### Vectorstore
+## Vectorstore
 
 The `HanaDB` class is used to connect to SAP HANA Cloud Vector Engine.
 
@@ -44,7 +44,7 @@ from langchain_hana import HanaDB
 
 > **Important**: You can use any embedding class that inherits from `langchain_core.embeddings.Embeddings`—**including** `HanaInternalEmbeddings`, which runs SAP HANA’s `VECTOR_EMBEDDING()` function internally. See [SAP Help](https://help.sap.com/docs/hana-cloud-database/sap-hana-cloud-sap-hana-database-vector-engine-guide/vector-embedding-function-vector?locale=en-US) for more details.
 
-### Self Query Retriever
+## Self Query Retriever
 
 [SAP HANA Cloud Vector Engine](https://help.sap.com/docs/hana-cloud-database/sap-hana-cloud-sap-hana-database-vector-engine-guide/sap-hana-cloud-sap-hana-database-vector-engine-guide) also provides a Self Query Retriever implementation using the `HanaTranslator` Class.
 
@@ -54,7 +54,7 @@ See a [usage example](https://github.com/SAP/langchain-integration-for-sap-hana-
 from langchain_hana import HanaTranslator
 ```
 
-### Graph
+## Graph
 
 [SAP HANA Cloud Knowledge Graph Engine](https://help.sap.com/docs/hana-cloud-database/sap-hana-cloud-sap-hana-database-knowledge-graph-guide/sap-hana-cloud-sap-hana-database-knowledge-graph-engine-guide) provides support to utilise knowledge graphs through the `HanaRdfGraph` Class.
 
@@ -64,7 +64,7 @@ See a [usage example](https://github.com/SAP/langchain-integration-for-sap-hana-
 from langchain_hana import HanaRdfGraph
 ```
 
-### Chains
+## Chains
 
 A `SparqlQAChain` is also provided which can be used with `HanaRdfGraph` for SPARQL-QA tasks.
 
@@ -72,6 +72,16 @@ See a [usage example](https://github.com/SAP/langchain-integration-for-sap-hana-
 
 ```python
 from langchain_hana import HanaSparqlQAChain
+```
+
+## Agents
+
+A `HanaSparqlQAAgent` can generate and execute SPARQL queries iteratively over `HanaRdfGraph`, including ontology retrieval and self-correction.
+
+See a [usage example](https://github.com/SAP/langchain-integration-for-sap-hana-cloud/blob/main/examples/sap_hana_sparql_qa_agent.ipynb).
+
+```python
+from langchain_hana import HanaSparqlQAAgent
 ```
 
 ## Documentation
