@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import threading
+import warnings
 from collections.abc import Generator, Iterator, Sequence
 from contextlib import contextmanager
 from typing import Any, cast
@@ -79,6 +80,15 @@ class HanaCheckpointSaver(BaseHanaCheckpointSaver):
             writes_table=writes_table,
         )
         self.connection = connection
+        # Disable autocommit so _cursor() controls the transaction boundary and
+        # multi-statement writes are atomic.
+        if self.connection.getautocommit():
+            warnings.warn(
+                "HanaCheckpointSaver is disabling autocommit on the provided "
+                "connection so checkpoint writes commit atomically.",
+                stacklevel=2,
+            )
+        self.connection.setautocommit(False)
         self.lock = threading.Lock()
         self.setup()
 
@@ -114,14 +124,23 @@ class HanaCheckpointSaver(BaseHanaCheckpointSaver):
 
     @contextmanager
     def _cursor(self, transaction: bool = True) -> Generator[dbapi.Cursor]:
-        """Yield a cursor under the saver lock, committing on exit if requested."""
+        """Yield a cursor under the saver lock.
+
+        When ``transaction`` is set, commit once the body completes and roll back
+        if it raises, so a failed multi-statement write leaves no partial state.
+        """
         with self.lock:
             cur = self.connection.cursor()
             try:
                 yield cur
-            finally:
+            except BaseException:
+                if transaction:
+                    self.connection.rollback()
+                raise
+            else:
                 if transaction:
                     self.connection.commit()
+            finally:
                 cur.close()
 
     # ------------------------------------------------------------------ #

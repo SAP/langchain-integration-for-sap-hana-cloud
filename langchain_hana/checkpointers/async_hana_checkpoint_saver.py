@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import warnings
 from collections.abc import AsyncGenerator, AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from typing import Any, cast
@@ -89,6 +90,16 @@ class AsyncHanaCheckpointSaver(BaseHanaCheckpointSaver):
             writes_table=writes_table,
         )
         self.connection = connection
+        # Disable autocommit so _cursor() controls the transaction boundary and
+        # multi-statement writes are atomic. setautocommit/getautocommit are
+        # synchronous at runtime, like cursor() above.
+        if self.connection.getautocommit():
+            warnings.warn(
+                "AsyncHanaCheckpointSaver is disabling autocommit on the provided "
+                "connection so checkpoint writes commit atomically.",
+                stacklevel=2,
+            )
+        self.connection.setautocommit(False)
         self.lock = asyncio.Lock()
 
     # ------------------------------------------------------------------ #
@@ -132,14 +143,23 @@ class AsyncHanaCheckpointSaver(BaseHanaCheckpointSaver):
     async def _cursor(
         self, transaction: bool = True
     ) -> AsyncGenerator[dbapi.AsyncCursor]:
-        """Yield a cursor under the saver lock, committing on exit if requested."""
+        """Yield a cursor under the saver lock.
+
+        When ``transaction`` is set, commit once the body completes and roll back
+        if it raises, so a failed multi-statement write leaves no partial state.
+        """
         async with self.lock:
             cur = self._new_cursor()
             try:
                 yield cur
-            finally:
+            except BaseException:
+                if transaction:
+                    await self.connection.rollback()
+                raise
+            else:
                 if transaction:
                     await self.connection.commit()
+            finally:
                 await cur.close()
 
     @staticmethod
