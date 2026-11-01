@@ -1,6 +1,7 @@
 import logging
 from typing import Any, List, Tuple
 
+from langchain_hana.utils import _json_value
 from langchain_hana.vectorstores.utils import _validate_identifier
 
 logger = logging.getLogger(__name__)
@@ -309,4 +310,4 @@ class CreateWhereClause:
         if column in self.specific_metadata_columns:
             return f'"{column}"'
         else:
-            return f"JSON_VALUE({self.metadata_column}, '$.{column}')"
+            return _json_value(self.metadata_column, column)

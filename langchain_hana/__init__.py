@@ -2,6 +2,10 @@ from importlib import metadata
 
 from langchain_hana.agents import HanaSparqlQAAgent
 from langchain_hana.chains import HanaSparqlQAChain
+from langchain_hana.checkpointers import (
+    AsyncHanaCheckpointSaver,
+    HanaCheckpointSaver,
+)
 from langchain_hana.embeddings import HanaInternalEmbeddings
 from langchain_hana.graphs import HanaRdfGraph
 from langchain_hana.structured_query import HanaTranslator
@@ -22,5 +26,7 @@ __all__ = [
     "HanaSparqlQAChain",
     "HanaSparqlQAAgent",
     "HanaReranker",
+    "HanaCheckpointSaver",
+    "AsyncHanaCheckpointSaver",
     "__version__",
 ]
