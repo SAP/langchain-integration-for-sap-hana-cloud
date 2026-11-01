@@ -1,6 +1,8 @@
 """Unit tests for the HANA checkpointer SQL helpers."""
 
 import pytest
+from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.base import ChannelVersions
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
 from langchain_hana.checkpointers import HanaCheckpointSaver
@@ -13,21 +15,21 @@ def test_build_where_clause_empty() -> None:
 
 
 def test_build_where_clause_config_only() -> None:
-    config = {"configurable": {"thread_id": "1", "checkpoint_ns": ""}}
+    config: RunnableConfig = {"configurable": {"thread_id": "1", "checkpoint_ns": ""}}
     where, params = HanaCheckpointSaver._build_where_clause(config, None, None)
     assert where == 'WHERE "THREAD_ID" = ? AND "CHECKPOINT_NS" = ?'
     assert params == ["1", ""]
 
 
 def test_build_where_clause_with_checkpoint_id_and_before() -> None:
-    config = {
+    config: RunnableConfig = {
         "configurable": {
             "thread_id": "1",
             "checkpoint_ns": "",
             "checkpoint_id": "ckpt-2",
         }
     }
-    before = {"configurable": {"checkpoint_id": "ckpt-5"}}
+    before: RunnableConfig = {"configurable": {"checkpoint_id": "ckpt-5"}}
     where, params = HanaCheckpointSaver._build_where_clause(config, None, before)
     assert where == (
         'WHERE "THREAD_ID" = ? AND "CHECKPOINT_NS" = ? AND "CHECKPOINT_ID" = ? '
@@ -81,7 +83,7 @@ def test_dump_blobs_serializes_and_placeholders() -> None:
     serde = JsonPlusSerializer()
     # "msgs" is non-primitive (in values); "step" is a primitive left inline
     # (only in versions, so it becomes an "empty" placeholder row).
-    versions = {"msgs": "v1", "step": "v2"}
+    versions: ChannelVersions = {"msgs": "v1", "step": "v2"}
     values = {"msgs": {"a": 1}}
     rows = HanaCheckpointSaver._dump_blobs(serde, "t1", "", values, versions)
 

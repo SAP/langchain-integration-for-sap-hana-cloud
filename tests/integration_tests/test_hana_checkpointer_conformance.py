@@ -58,7 +58,7 @@ async def hana_saver() -> AsyncGenerator[AsyncHanaCheckpointSaver, None]:
     spec test scopes its assertions by a unique ``thread_id``, so a shared schema is
     safe across capability suites.
     """
-    conn = await dbapi.async_connect(**_conn_params())
+    conn = await dbapi.async_connect(**_conn_params())  # type: ignore[misc]
     try:
         saver = AsyncHanaCheckpointSaver(conn, schema_name=config.schema_name)
         await saver.setup()

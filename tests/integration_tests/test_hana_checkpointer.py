@@ -10,7 +10,12 @@ from typing import Any
 
 import pytest
 from hdbcli import dbapi
-from langgraph.checkpoint.base import create_checkpoint, empty_checkpoint
+from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.base import (
+    CheckpointMetadata,
+    create_checkpoint,
+    empty_checkpoint,
+)
 
 from langchain_hana.checkpointers import HanaCheckpointSaver
 from langchain_hana.utils import _table_exists
@@ -48,7 +53,7 @@ def saver() -> HanaCheckpointSaver:
     return HanaCheckpointSaver(config.conn, schema_name=config.schema_name)
 
 
-def _config(thread_id: str, checkpoint_id: str | None = None) -> dict:
+def _config(thread_id: str, checkpoint_id: str | None = None) -> RunnableConfig:
     configurable: dict[str, Any] = {"thread_id": thread_id, "checkpoint_ns": ""}
     if checkpoint_id is not None:
         configurable["checkpoint_id"] = checkpoint_id
@@ -62,7 +67,9 @@ def _blob_count(saver: HanaCheckpointSaver, thread_id: str) -> int:
             f'SELECT COUNT(*) FROM {saver._blobs_ref} WHERE "THREAD_ID" = ?',
             (thread_id,),
         )
-        return int(cur.fetchone()[0])
+        row = cur.fetchone()
+        assert row is not None
+        return int(row[0])
     finally:
         cur.close()
 
@@ -71,7 +78,9 @@ def _max_migration(saver: HanaCheckpointSaver) -> int:
     cur = saver.connection.cursor()
     try:
         cur.execute(f'SELECT MAX("V") FROM {saver._migrations_ref}')
-        return int(cur.fetchone()[0])
+        row = cur.fetchone()
+        assert row is not None
+        return int(row[0])
     finally:
         cur.close()
 
@@ -112,7 +121,7 @@ def test_unchanged_channel_reuses_blob_row(saver: HanaCheckpointSaver) -> None:
 
 def test_put_and_get_tuple_roundtrip(saver: HanaCheckpointSaver) -> None:
     chkpnt = empty_checkpoint()
-    metadata = {"source": "input", "step": 1}
+    metadata: CheckpointMetadata = {"source": "input", "step": 1}
     saved = saver.put(_config("t-roundtrip"), chkpnt, metadata, {})
 
     got = saver.get_tuple(saved)
@@ -192,7 +201,7 @@ def test_stategraph_smoke(saver: HanaCheckpointSaver) -> None:
     builder.add_edge("inc", END)
     graph = builder.compile(checkpointer=saver)
 
-    thread = {"configurable": {"thread_id": "t-graph"}}
+    thread: RunnableConfig = {"configurable": {"thread_id": "t-graph"}}
     result = graph.invoke({"value": 3}, thread)
     assert result["value"] == 4
 
