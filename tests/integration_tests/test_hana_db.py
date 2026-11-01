@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from langchain_hana import HanaDB
-from langchain_hana.utils import DistanceStrategy, _table_ref
+from langchain_hana.utils import DistanceStrategy, _table_exists, _table_ref
 from tests.fixtures.filtering_test_cases import (
     DOCUMENTS,
     FILTERING_TEST_CASES,
@@ -225,7 +225,7 @@ def test_hanavector_non_existing_table(
         schema_name=schema_name,
     )
 
-    assert vectordb._table_exists(table_name)
+    assert _table_exists(vectordb.connection, table_name, vectordb.schema_name)
 
 
 @pytest.mark.skipif(not hanadb_installed, reason="hanadb not installed")
@@ -359,7 +359,7 @@ def test_hanavector_non_existing_table_fixed_vector_length(
         vector_column_length=vector_column_length,
     )
 
-    assert vectordb._table_exists(table_name)
+    assert _table_exists(vectordb.connection, table_name, vectordb.schema_name)
     vectordb._check_column(
         table_name, vector_column, ["REAL_VECTOR"], vector_column_length
     )
