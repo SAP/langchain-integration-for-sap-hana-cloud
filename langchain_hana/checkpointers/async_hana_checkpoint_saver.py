@@ -262,7 +262,10 @@ class AsyncHanaCheckpointSaver(BaseHanaCheckpointSaver):
         before: RunnableConfig | None = None,
         limit: int | None = None,
     ) -> AsyncIterator[CheckpointTuple]:
-        """Yield a thread's checkpoints newest-first, each with its pending writes."""
+        """Yield checkpoints scoped by ``config`` (thread/ns/id), newest-first.
+
+        ``filter`` and ``before`` narrow further; a ``None`` config lists all threads.
+        """
         where_clause, params = self._build_where_clause(config, filter, before)
         list_checkpoints_sql = self._list_checkpoints_sql(where_clause, limit)
         async with self._cursor(transaction=False) as cur:
