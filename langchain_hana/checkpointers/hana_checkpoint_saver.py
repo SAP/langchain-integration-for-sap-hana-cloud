@@ -9,24 +9,20 @@ builders and serialization helpers are shared with the native-async
 
 from __future__ import annotations
 
-import json
 import threading
 import warnings
 from collections.abc import Generator, Iterator, Sequence
 from contextlib import contextmanager
-from typing import Any, cast
+from typing import Any
 
 from hdbcli import dbapi
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import (
-    WRITES_IDX_MAP,
     ChannelVersions,
     Checkpoint,
     CheckpointMetadata,
     CheckpointTuple,
     SerializerProtocol,
-    get_checkpoint_id,
-    get_checkpoint_metadata,
 )
 
 from langchain_hana.checkpointers.base_hana_checkpoint_saver import (
@@ -148,23 +144,12 @@ class HanaCheckpointSaver(BaseHanaCheckpointSaver):
     # ------------------------------------------------------------------ #
     def get_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
         """Fetch a checkpoint by id, or the latest for the thread, with its writes."""
-        thread_id = str(config["configurable"]["thread_id"])
-        checkpoint_ns = config["configurable"].get("checkpoint_ns", "")
+        thread_id, checkpoint_ns = self._thread_ns(config)
+        select_sql, select_params = self._get_checkpoint_query(
+            config, thread_id, checkpoint_ns
+        )
         with self._cursor(transaction=False) as cur:
-            if checkpoint_id := get_checkpoint_id(config):
-                select_by_id_sql = (
-                    self._select_checkpoint_sql
-                    + 'WHERE "THREAD_ID" = ? AND "CHECKPOINT_NS" = ? '
-                    'AND "CHECKPOINT_ID" = ?'
-                )
-                cur.execute(select_by_id_sql, (thread_id, checkpoint_ns, checkpoint_id))
-            else:
-                select_latest_sql = (
-                    self._select_checkpoint_sql
-                    + 'WHERE "THREAD_ID" = ? AND "CHECKPOINT_NS" = ? '
-                    'ORDER BY "CHECKPOINT_ID" DESC LIMIT 1'
-                )
-                cur.execute(select_latest_sql, (thread_id, checkpoint_ns))
+            cur.execute(select_sql, select_params)
             row = cur.fetchone() if cur.has_result_set() else None
             if not row:
                 return None
@@ -176,13 +161,6 @@ class HanaCheckpointSaver(BaseHanaCheckpointSaver):
                 checkpoint,
                 metadata,
             ) = row
-            final_config: RunnableConfig = {
-                "configurable": {
-                    "thread_id": thread_id,
-                    "checkpoint_ns": checkpoint_ns,
-                    "checkpoint_id": checkpoint_id,
-                }
-            }
             checkpoint_value = self._load_checkpoint(
                 cur, thread_id, checkpoint_ns, serde_type, checkpoint
             )
@@ -191,26 +169,14 @@ class HanaCheckpointSaver(BaseHanaCheckpointSaver):
                 (thread_id, checkpoint_ns, str(checkpoint_id)),
             )
             write_rows = cur.fetchall() if cur.has_result_set() else []
-            metadata_str = self._to_str(metadata)
-            return CheckpointTuple(
-                final_config,
-                checkpoint_value,
-                cast(
-                    CheckpointMetadata,
-                    json.loads(metadata_str) if metadata_str else {},
-                ),
-                (
-                    {
-                        "configurable": {
-                            "thread_id": thread_id,
-                            "checkpoint_ns": checkpoint_ns,
-                            "checkpoint_id": parent_checkpoint_id,
-                        }
-                    }
-                    if parent_checkpoint_id
-                    else None
-                ),
-                self._load_pending_writes(write_rows, self.serde),
+            return self._build_checkpoint_tuple(
+                thread_id=thread_id,
+                checkpoint_ns=checkpoint_ns,
+                checkpoint_id=checkpoint_id,
+                parent_checkpoint_id=parent_checkpoint_id,
+                checkpoint_value=checkpoint_value,
+                metadata=metadata,
+                write_rows=write_rows,
             )
 
     def list(
@@ -247,32 +213,14 @@ class HanaCheckpointSaver(BaseHanaCheckpointSaver):
                     (thread_id, checkpoint_ns, str(checkpoint_id)),
                 )
                 write_rows = cur.fetchall() if cur.has_result_set() else []
-                metadata_str = self._to_str(metadata)
-                yield CheckpointTuple(
-                    {
-                        "configurable": {
-                            "thread_id": thread_id,
-                            "checkpoint_ns": checkpoint_ns,
-                            "checkpoint_id": checkpoint_id,
-                        }
-                    },
-                    checkpoint_value,
-                    cast(
-                        CheckpointMetadata,
-                        json.loads(metadata_str) if metadata_str else {},
-                    ),
-                    (
-                        {
-                            "configurable": {
-                                "thread_id": thread_id,
-                                "checkpoint_ns": checkpoint_ns,
-                                "checkpoint_id": parent_checkpoint_id,
-                            }
-                        }
-                        if parent_checkpoint_id
-                        else None
-                    ),
-                    self._load_pending_writes(write_rows, self.serde),
+                yield self._build_checkpoint_tuple(
+                    thread_id=thread_id,
+                    checkpoint_ns=checkpoint_ns,
+                    checkpoint_id=checkpoint_id,
+                    parent_checkpoint_id=parent_checkpoint_id,
+                    checkpoint_value=checkpoint_value,
+                    metadata=metadata,
+                    write_rows=write_rows,
                 )
 
     def _load_checkpoint(
@@ -284,23 +232,13 @@ class HanaCheckpointSaver(BaseHanaCheckpointSaver):
         checkpoint: Any,
     ) -> Checkpoint:
         """Deserialize a checkpoint skeleton and merge its per-channel blob values."""
-        checkpoint_value = cast(
-            Checkpoint,
-            self.serde.loads_typed(
-                cast(
-                    "tuple[str, bytes]",
-                    (self._to_str(serde_type), self._to_bytes(checkpoint)),
-                )
-            ),
+        checkpoint_value, channel_versions = self._decode_checkpoint(
+            serde_type, checkpoint
         )
-        channel_versions = checkpoint_value.get("channel_versions") or {}
         if channel_versions:
             cur.execute(*self._blob_query(thread_id, checkpoint_ns, channel_versions))
             blob_rows = cur.fetchall() if cur.has_result_set() else []
-            checkpoint_value["channel_values"] = {
-                **checkpoint_value.get("channel_values", {}),
-                **self._load_blobs(blob_rows, self.serde),
-            }
+            self._merge_channel_values(checkpoint_value, blob_rows)
         return checkpoint_value
 
     # ------------------------------------------------------------------ #
@@ -319,39 +257,14 @@ class HanaCheckpointSaver(BaseHanaCheckpointSaver):
         values (``None``/``str``/``int``/``float``/``bool``) stay inline in the
         checkpoint skeleton.
         """
-        thread_id = str(config["configurable"]["thread_id"])
-        checkpoint_ns = config["configurable"].get("checkpoint_ns", "")
-
-        copy, blob_values = self._split_checkpoint(checkpoint)
-        blob_rows = self._dump_blobs(
-            self.serde, thread_id, checkpoint_ns, blob_values, new_versions
-        )
-        serde_type, serialized_checkpoint = self.serde.dumps_typed(copy)
-        serialized_metadata = json.dumps(
-            get_checkpoint_metadata(config, metadata), ensure_ascii=False
+        blob_rows, checkpoint_params, next_config = self._prepare_put(
+            config, checkpoint, metadata, new_versions
         )
         with self._cursor() as cur:
             if blob_rows:
                 cur.executemany(self._upsert_blobs_sql(), blob_rows)
-            cur.execute(
-                self._upsert_checkpoint_sql,
-                (
-                    thread_id,
-                    checkpoint_ns,
-                    checkpoint["id"],
-                    config["configurable"].get("checkpoint_id"),
-                    serde_type,
-                    serialized_checkpoint,
-                    serialized_metadata,
-                ),
-            )
-        return {
-            "configurable": {
-                "thread_id": thread_id,
-                "checkpoint_ns": checkpoint_ns,
-                "checkpoint_id": checkpoint["id"],
-            }
-        }
+            cur.execute(self._upsert_checkpoint_sql, checkpoint_params)
+        return next_config
 
     def put_writes(
         self,
@@ -366,23 +279,7 @@ class HanaCheckpointSaver(BaseHanaCheckpointSaver):
         regular channel writes are inserted only if absent (first-write-wins), so
         a retried task does not clobber already-recorded output.
         """
-        thread_id = str(config["configurable"]["thread_id"])
-        checkpoint_ns = str(config["configurable"].get("checkpoint_ns", ""))
-        checkpoint_id = str(config["configurable"]["checkpoint_id"])
-        rows = [
-            (
-                thread_id,
-                checkpoint_ns,
-                checkpoint_id,
-                task_id,
-                task_path,
-                WRITES_IDX_MAP.get(channel, idx),
-                channel,
-                *self.serde.dumps_typed(value),
-            )
-            for idx, (channel, value) in enumerate(writes)
-        ]
-        upsert = all(w[0] in WRITES_IDX_MAP for w in writes)
+        rows, upsert = self._prepare_put_writes(config, writes, task_id, task_path)
         with self._cursor() as cur:
             cur.executemany(self._put_writes_sql(upsert), rows)
 

@@ -133,25 +133,9 @@ def test_load_pending_writes_orders_and_deserializes() -> None:
     ]
 
 
-class _FakeLob:
-    def __init__(self, data: bytes) -> None:
-        self._data = data
-
-    def read(self) -> bytes:
-        return self._data
-
-
 def test_to_bytes_handles_variants() -> None:
+    # HANA returns BLOB/VARBINARY as memoryview; bytes/bytearray pass through.
     assert HanaCheckpointSaver._to_bytes(None) is None
     assert HanaCheckpointSaver._to_bytes(b"abc") == b"abc"
     assert HanaCheckpointSaver._to_bytes(bytearray(b"abc")) == b"abc"
     assert HanaCheckpointSaver._to_bytes(memoryview(b"abc")) == b"abc"
-    assert HanaCheckpointSaver._to_bytes(_FakeLob(b"abc")) == b"abc"
-    assert HanaCheckpointSaver._to_bytes("abc") == b"abc"
-
-
-def test_to_str_handles_variants() -> None:
-    assert HanaCheckpointSaver._to_str(None) is None
-    assert HanaCheckpointSaver._to_str("abc") == "abc"
-    assert HanaCheckpointSaver._to_str(b"abc") == "abc"
-    assert HanaCheckpointSaver._to_str(_FakeLob(b"abc")) == "abc"

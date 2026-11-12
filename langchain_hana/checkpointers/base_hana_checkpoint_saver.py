@@ -21,18 +21,23 @@ Four tables are used:
 
 from __future__ import annotations
 
+import json
 import random
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Any, List, cast
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import (
+    WRITES_IDX_MAP,
     BaseCheckpointSaver,
     ChannelVersions,
     Checkpoint,
+    CheckpointMetadata,
+    CheckpointTuple,
     PendingWrite,
     SerializerProtocol,
     get_checkpoint_id,
+    get_checkpoint_metadata,
 )
 
 from langchain_hana.utils import (
@@ -370,39 +375,190 @@ class BaseHanaCheckpointSaver(BaseCheckpointSaver[str]):
         return (task_path or "", task_id, idx)
 
     # ------------------------------------------------------------------ #
+    # Request/response assembly (connection-agnostic, shared sync/async)
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def _thread_ns(config: RunnableConfig) -> tuple[str, str]:
+        """Extract ``(thread_id, checkpoint_ns)`` from a config, with ns default."""
+        return (
+            str(config["configurable"]["thread_id"]),
+            config["configurable"].get("checkpoint_ns", ""),
+        )
+
+    @staticmethod
+    def _configurable(
+        thread_id: str, checkpoint_ns: str, checkpoint_id: Any
+    ) -> RunnableConfig:
+        """Build a fully-qualified ``{"configurable": {...}}`` checkpoint config."""
+        return {
+            "configurable": {
+                "thread_id": thread_id,
+                "checkpoint_ns": checkpoint_ns,
+                "checkpoint_id": checkpoint_id,
+            }
+        }
+
+    def _get_checkpoint_query(
+        self, config: RunnableConfig, thread_id: str, checkpoint_ns: str
+    ) -> tuple[str, tuple[Any, ...]]:
+        """SQL + params for ``get_tuple``: fetch by id, or the thread's latest."""
+        if checkpoint_id := get_checkpoint_id(config):
+            sql = (
+                self._select_checkpoint_sql
+                + 'WHERE "THREAD_ID" = ? AND "CHECKPOINT_NS" = ? '
+                'AND "CHECKPOINT_ID" = ?'
+            )
+            return sql, (thread_id, checkpoint_ns, checkpoint_id)
+        sql = (
+            self._select_checkpoint_sql
+            + 'WHERE "THREAD_ID" = ? AND "CHECKPOINT_NS" = ? '
+            'ORDER BY "CHECKPOINT_ID" DESC LIMIT 1'
+        )
+        return sql, (thread_id, checkpoint_ns)
+
+    @staticmethod
+    def _load_metadata(metadata: Any) -> CheckpointMetadata:
+        """Decode a HANA metadata column into a ``CheckpointMetadata``.
+
+        ``hdbcli`` returns the NCLOB column as ``str`` (or ``None`` for SQL NULL),
+        so it is passed straight to ``json.loads``.
+        """
+        return cast(
+            CheckpointMetadata,
+            json.loads(metadata) if metadata else {},
+        )
+
+    def _build_checkpoint_tuple(
+        self,
+        *,
+        thread_id: str,
+        checkpoint_ns: str,
+        checkpoint_id: Any,
+        parent_checkpoint_id: Any,
+        checkpoint_value: Checkpoint,
+        metadata: Any,
+        write_rows: Iterable[Any],
+    ) -> CheckpointTuple:
+        """Assemble a ``CheckpointTuple`` from a checkpoint row and its write rows."""
+        return CheckpointTuple(
+            self._configurable(thread_id, checkpoint_ns, checkpoint_id),
+            checkpoint_value,
+            self._load_metadata(metadata),
+            (
+                self._configurable(thread_id, checkpoint_ns, parent_checkpoint_id)
+                if parent_checkpoint_id
+                else None
+            ),
+            self._load_pending_writes(write_rows, self.serde),
+        )
+
+    def _decode_checkpoint(
+        self, serde_type: Any, checkpoint: Any
+    ) -> tuple[Checkpoint, Mapping[str, Any]]:
+        """Deserialize a checkpoint skeleton and return it with its channel versions.
+
+        The caller fetches the blob rows for ``channel_versions`` (sync or async) and
+        merges them back with :meth:`_merge_channel_values`.
+        """
+        checkpoint_value = cast(
+            Checkpoint,
+            self.serde.loads_typed(
+                cast(
+                    "tuple[str, bytes]",
+                    (serde_type, self._to_bytes(checkpoint)),
+                )
+            ),
+        )
+        return checkpoint_value, checkpoint_value.get("channel_versions") or {}
+
+    def _merge_channel_values(
+        self, checkpoint_value: Checkpoint, blob_rows: Iterable[Any]
+    ) -> None:
+        """Merge deserialized per-channel blob values into a checkpoint skeleton."""
+        checkpoint_value["channel_values"] = {
+            **checkpoint_value.get("channel_values", {}),
+            **self._load_blobs(blob_rows, self.serde),
+        }
+
+    def _prepare_put(
+        self,
+        config: RunnableConfig,
+        checkpoint: Checkpoint,
+        metadata: CheckpointMetadata,
+        new_versions: ChannelVersions,
+    ) -> tuple[List[tuple[Any, ...]], tuple[Any, ...], RunnableConfig]:
+        """Serialize a checkpoint for ``put``.
+
+        Returns the blob rows to upsert, the checkpoint-row parameter tuple, and the
+        fully-qualified config the saver returns to the caller.
+        """
+        thread_id, checkpoint_ns = self._thread_ns(config)
+        copy, blob_values = self._split_checkpoint(checkpoint)
+        blob_rows = self._dump_blobs(
+            self.serde, thread_id, checkpoint_ns, blob_values, new_versions
+        )
+        serde_type, serialized_checkpoint = self.serde.dumps_typed(copy)
+        serialized_metadata = json.dumps(
+            get_checkpoint_metadata(config, metadata), ensure_ascii=False
+        )
+        checkpoint_params = (
+            thread_id,
+            checkpoint_ns,
+            checkpoint["id"],
+            config["configurable"].get("checkpoint_id"),
+            serde_type,
+            serialized_checkpoint,
+            serialized_metadata,
+        )
+        next_config = self._configurable(thread_id, checkpoint_ns, checkpoint["id"])
+        return blob_rows, checkpoint_params, next_config
+
+    def _prepare_put_writes(
+        self,
+        config: RunnableConfig,
+        writes: Sequence[tuple[str, Any]],
+        task_id: str,
+        task_path: str,
+    ) -> tuple[List[tuple[Any, ...]], bool]:
+        """Build the write rows for ``put_writes`` and whether to UPSERT (replace).
+
+        ``upsert`` is True only when every write targets a special control channel
+        (``WRITES_IDX_MAP``); otherwise rows are inserted if-absent (first-write-wins).
+        """
+        thread_id = str(config["configurable"]["thread_id"])
+        checkpoint_ns = str(config["configurable"].get("checkpoint_ns", ""))
+        checkpoint_id = str(config["configurable"]["checkpoint_id"])
+        rows = [
+            (
+                thread_id,
+                checkpoint_ns,
+                checkpoint_id,
+                task_id,
+                task_path,
+                WRITES_IDX_MAP.get(channel, idx),
+                channel,
+                *self.serde.dumps_typed(value),
+            )
+            for idx, (channel, value) in enumerate(writes)
+        ]
+        upsert = all(w[0] in WRITES_IDX_MAP for w in writes)
+        return rows, upsert
+
+    # ------------------------------------------------------------------ #
     # Serialization helpers (pure; kept static for DB-free testing)
     # ------------------------------------------------------------------ #
     @staticmethod
     def _to_bytes(value: Any) -> bytes | None:
         """Normalise a HANA BLOB/VARBINARY column value to ``bytes``.
 
-        ``hdbcli`` may return a LOB column as raw ``bytes``/``bytearray``, a
-        ``memoryview``, or a LOB object exposing ``read()``. In the async driver,
-        ``AsyncLob.read()`` is awaited by the caller first, so by this point the
-        value is already ``bytes``/``str``.
+        ``hdbcli`` returns binary columns as a ``memoryview`` while the shared
+        deserializers require real ``bytes`` — e.g. ``json.loads`` rejects a
+        ``memoryview`` — so the buffer is copied into ``bytes`` here. ``bytes()`` also
+        accepts ``bytes``/``bytearray`` unchanged.
         """
         if value is None:
             return None
-        if isinstance(value, (bytes, bytearray, memoryview)):
-            return bytes(value)
-        if hasattr(value, "read"):
-            return bytes(value.read())
-        if isinstance(value, str):
-            return value.encode("utf-8")
-        raise TypeError(f"Cannot convert value of type {type(value)!r} to bytes")
-
-    @staticmethod
-    def _to_str(value: Any) -> str | None:
-        """Normalise a HANA NCLOB/NVARCHAR column value to ``str``."""
-        if value is None:
-            return None
-        if isinstance(value, str):
-            return value
-        if hasattr(value, "read"):
-            value = value.read()
-        if isinstance(value, (bytes, bytearray, memoryview)):
-            return bytes(value).decode("utf-8")
-        return str(value)
+        return bytes(value)
 
     @staticmethod
     def _split_checkpoint(checkpoint: Checkpoint) -> tuple[Checkpoint, dict[str, Any]]:
@@ -453,15 +609,12 @@ class BaseHanaCheckpointSaver(BaseCheckpointSaver[str]):
         """Deserialize blob rows ``(channel, type, blob)``, skipping placeholders."""
         result: dict[str, Any] = {}
         for channel, serde_type, blob in rows:
-            type_str = BaseHanaCheckpointSaver._to_str(serde_type)
-            if type_str is None or type_str == "empty":
+            if serde_type is None or serde_type == "empty":
                 continue
-            result[cast(str, BaseHanaCheckpointSaver._to_str(channel))] = (
-                serde.loads_typed(
-                    cast(
-                        "tuple[str, bytes]",
-                        (type_str, BaseHanaCheckpointSaver._to_bytes(blob)),
-                    )
+            result[cast(str, channel)] = serde.loads_typed(
+                cast(
+                    "tuple[str, bytes]",
+                    (serde_type, BaseHanaCheckpointSaver._to_bytes(blob)),
                 )
             )
         return result
