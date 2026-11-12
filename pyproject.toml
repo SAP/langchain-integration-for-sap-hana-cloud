@@ -58,31 +58,31 @@ optional = true
 optional = true
 
 [tool.poetry.group.dev.dependencies]
-nbstripout = "^0.8.2"
+nbstripout = "^0.9.1"
 
 [tool.poetry.group.test.dependencies]
-pytest = "^9.0.2"
-pytest-asyncio = "^1.3.0"
-pytest-socket = "^0.7.0"
+pytest = "^9.2.0"
+pytest-asyncio = "^1.5.0"
+pytest-socket = "^0.8.1"
 pytest-watcher = "^0.6.3"
 agentevals = "^0.0.9"
-sap-ai-sdk-gen = {extras = ["all"], version = "^6.10.0"}
+sap-ai-sdk-gen = {extras = ["all"], version = "^7.4.1"}
 langgraph-checkpoint-conformance = "^0.0.2"
 
 [tool.poetry.group.lint.dependencies]
-ruff = "^0.5"
+ruff = "^0.17.4"
 mdformat = "^1.0.0"
 
 [tool.poetry.group.typing.dependencies]
-mypy = "^1.10"
+mypy = "^2.4.1"
 types-colorama = "^0.4.15"
 types-defusedxml = "^0.7.0"
-types-docutils = "^0.22.3"
-types-hdbcli = "^2.25.0"
+types-docutils = "^0.23.0"
+types-hdbcli = "^2.30.0"
 types-pexpect = "^4.9.0"
 types-psutil = "^7.2.2"
-types-pycurl = "^7.45.7"
-types-Pygments = "^2.20.0"
+types-pycurl = "^7.49.0"
+types-Pygments = "^2.21.0"
 types-PyYAML = "^6.0.12"
-types-regex = "^2026.4.4"
+types-regex = "^2026.11.9"
 types-requests = "^2.33.0"
