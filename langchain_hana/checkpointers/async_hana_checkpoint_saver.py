@@ -43,6 +43,8 @@ from langchain_hana.checkpointers.base_hana_checkpoint_saver import (
 class AsyncHanaCheckpointSaver(BaseHanaCheckpointSaver):
     """Store LangGraph checkpoints in SAP HANA Cloud (native asyncio).
 
+    Requires ``hdbcli >= 2.27`` for working async connection support.
+
     Args:
         connection: An open ``hdbcli`` async connection. Create it with async mode
             enabled, e.g.
