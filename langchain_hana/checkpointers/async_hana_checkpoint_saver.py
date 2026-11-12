@@ -157,27 +157,6 @@ class AsyncHanaCheckpointSaver(BaseHanaCheckpointSaver):
             finally:
                 await cur.close()
 
-    @staticmethod
-    async def _materialize(row: Any) -> tuple[Any, ...]:
-        """Await any ``AsyncLob`` columns so a row carries only materialized values.
-
-        ``hdbcli`` (verified on 2.29.x) already returns columns as ``memoryview``/
-        ``str``, so this is a pass-through; it remains to await ``AsyncLob`` objects
-        if a connection returns them, before the shared synchronous deserializers
-        (``_load_blobs``/``_load_pending_writes``/``loads_typed``) run.
-        """
-        out: list[Any] = []
-        for value in row:
-            if isinstance(value, dbapi.AsyncLob):
-                out.append(await value.read())
-            else:
-                out.append(value)
-        return tuple(out)
-
-    @classmethod
-    async def _materialize_all(cls, rows: Any) -> list[tuple[Any, ...]]:
-        return [await cls._materialize(row) for row in rows]
-
     # ------------------------------------------------------------------ #
     # Reads
     # ------------------------------------------------------------------ #
@@ -199,7 +178,7 @@ class AsyncHanaCheckpointSaver(BaseHanaCheckpointSaver):
                 serde_type,
                 checkpoint,
                 metadata,
-            ) = await self._materialize(raw)
+            ) = raw
             checkpoint_value = await self._aload_checkpoint(
                 cur, thread_id, checkpoint_ns, serde_type, checkpoint
             )
@@ -207,7 +186,7 @@ class AsyncHanaCheckpointSaver(BaseHanaCheckpointSaver):
                 self._pending_writes_sql(),
                 (thread_id, checkpoint_ns, str(checkpoint_id)),
             )
-            write_rows = await self._materialize_all(await cur.fetchall())
+            write_rows = await cur.fetchall()
             return self._build_checkpoint_tuple(
                 thread_id=thread_id,
                 checkpoint_ns=checkpoint_ns,
@@ -234,7 +213,7 @@ class AsyncHanaCheckpointSaver(BaseHanaCheckpointSaver):
         list_checkpoints_sql = self._list_checkpoints_sql(where_clause, limit)
         async with self._cursor(transaction=False) as cur:
             await cur.execute(list_checkpoints_sql, tuple(params))
-            checkpoint_rows = await self._materialize_all(await cur.fetchall())
+            checkpoint_rows = await cur.fetchall()
             results: list[CheckpointTuple] = []
             for (
                 thread_id,
@@ -252,7 +231,7 @@ class AsyncHanaCheckpointSaver(BaseHanaCheckpointSaver):
                     self._pending_writes_sql(),
                     (thread_id, checkpoint_ns, str(checkpoint_id)),
                 )
-                write_rows = await self._materialize_all(await cur.fetchall())
+                write_rows = await cur.fetchall()
                 results.append(
                     self._build_checkpoint_tuple(
                         thread_id=thread_id,
@@ -283,7 +262,7 @@ class AsyncHanaCheckpointSaver(BaseHanaCheckpointSaver):
             await cur.execute(
                 *self._blob_query(thread_id, checkpoint_ns, channel_versions)
             )
-            blob_rows = await self._materialize_all(await cur.fetchall())
+            blob_rows = await cur.fetchall()
             self._merge_channel_values(checkpoint_value, blob_rows)
         return checkpoint_value
 
