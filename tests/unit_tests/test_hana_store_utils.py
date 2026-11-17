@@ -271,9 +271,9 @@ def test_assign_get_results_fills_slots_and_returns_refresh_keys() -> None:
     ]
     results: list[object] = [None, None, None]
     refresh = store._assign_get_results(namespace, rows, items, results)
-    assert results[0].value == {"v": 1}  # type: ignore[union-attr]
+    assert results[0].value == {"v": 1}  # type: ignore[attr-defined]
     assert results[1] is None  # not found
-    assert results[2].value == {"v": 3}  # type: ignore[union-attr]
+    assert results[2].value == {"v": 3}  # type: ignore[attr-defined]
     # only found keys that requested a refresh: k1 (found+refresh), not k2
     # (missing), not k3 (refresh_ttl False)
     assert refresh == ["k1"]
