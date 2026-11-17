@@ -25,6 +25,7 @@ from langchain_hana.embeddings import HanaInternalEmbeddings
 from langchain_hana.utils import (
     DEFAULT_VECTOR_COLUMN_TYPE,
     DistanceStrategy,
+    _convert_vector_embedding_to_column_type,
     _deserialize_vector,
     _json_value,
     _sanitize_name,
@@ -36,6 +37,7 @@ from langchain_hana.utils import (
     _validate_k,
     _validate_k_and_fetch_k,
     _validate_vector_column_type,
+    _vector_embedding_sql_and_params,
 )
 from langchain_hana.vectorstores.create_where_clause import (
     CreateWhereClause,
@@ -233,22 +235,13 @@ class HanaDB(VectorStore):
         self, text: str, type: str
     ) -> tuple[str, tuple[str, ...]]:
         """Generate the VECTOR_EMBEDDING SQL expression and parameters."""
-        if type != "QUERY" and type != "DOCUMENT":
-            raise ValueError("type must be either 'QUERY' or 'DOCUMENT'")
-
-        vector_embedding_params: tuple[str, ...] = (
+        return _vector_embedding_sql_and_params(
             text,
+            type,
             self.internal_embedding_model_id,
+            self.internal_embedding_remote_source_schema,
+            self.internal_embedding_remote_source,
         )
-        if not self.internal_embedding_remote_source:
-            vector_embedding_sql = f"""VECTOR_EMBEDDING(?, '{type}', ?)"""
-        else:
-            vector_embedding_sql = f"""VECTOR_EMBEDDING(?, '{type}', ?, ?, ?)"""
-            vector_embedding_params += (
-                self.internal_embedding_remote_source_schema,
-                self.internal_embedding_remote_source,
-            )
-        return vector_embedding_sql, vector_embedding_params
 
     def _validate_internal_embedding_function(self) -> None:
         """
@@ -385,14 +378,7 @@ class HanaDB(VectorStore):
             str: Wrapped expression if vector column type is not REAL_VECTOR,
                 otherwise the original expression.
         """
-
-        if "VECTOR_EMBEDDING" not in expr.upper():
-            raise ValueError(f"Expected 'VECTOR_EMBEDDING' in '{expr}'")
-
-        if self.vector_column_type != "REAL_VECTOR":
-            return self._convert_to_target_vector_type(expr)
-
-        return expr
+        return _convert_vector_embedding_to_column_type(expr, self.vector_column_type)
 
     def create_hnsw_index(
         self,
