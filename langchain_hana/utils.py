@@ -155,6 +155,46 @@ def _to_target_vector_type(expr: str, vector_column_type: str) -> str:
     raise ValueError(f"Unsupported vector type: {vector_column_type}")
 
 
+def _vector_embedding_sql_and_params(
+    text: str,
+    kind: str,
+    model_id: str,
+    remote_source_schema: str = "",
+    remote_source: str = "",
+) -> tuple[str, tuple[str, ...]]:
+    """Build a HANA ``VECTOR_EMBEDDING`` expression (placeholders) and its params.
+
+    ``kind`` is ``"QUERY"`` or ``"DOCUMENT"``. Returns the three-argument form
+    ``VECTOR_EMBEDDING(?, '<kind>', ?)`` with params ``(text, model_id)``, or the
+    five-argument remote-source form ``VECTOR_EMBEDDING(?, '<kind>', ?, ?, ?)`` with
+    params ``(text, model_id, remote_source_schema, remote_source)`` when a remote
+    source is configured.
+    """
+    if kind not in ("QUERY", "DOCUMENT"):
+        raise ValueError("kind must be either 'QUERY' or 'DOCUMENT'")
+    params: tuple[str, ...] = (text, model_id)
+    if not remote_source:
+        sql = f"VECTOR_EMBEDDING(?, '{kind}', ?)"
+    else:
+        sql = f"VECTOR_EMBEDDING(?, '{kind}', ?, ?, ?)"
+        params += (remote_source_schema, remote_source)
+    return sql, params
+
+
+def _convert_vector_embedding_to_column_type(expr: str, vector_column_type: str) -> str:
+    """Align a ``VECTOR_EMBEDDING`` expression with the stored column type.
+
+    ``VECTOR_EMBEDDING`` always produces a ``REAL_VECTOR``; when the column is a
+    different type (e.g. ``HALF_VECTOR``) the expression is wrapped in the matching
+    ``TO_<type>`` conversion, otherwise it is returned unchanged.
+    """
+    if "VECTOR_EMBEDDING" not in expr.upper():
+        raise ValueError(f"Expected 'VECTOR_EMBEDDING' in '{expr}'")
+    if vector_column_type != "REAL_VECTOR":
+        return _to_target_vector_type(expr, vector_column_type)
+    return expr
+
+
 def _get_min_supported_version(datatype: str) -> str:
     """Minimum HANA Cloud instance version that offers a given vector datatype."""
     if datatype == "HALF_VECTOR":

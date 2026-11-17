@@ -26,6 +26,10 @@ def _bare_store(
     index_config: object | None = None,
     embedding_dims: int = 0,
     vector_column_type: str = "REAL_VECTOR",
+    use_internal_embeddings: bool = False,
+    internal_embedding_model_id: str = "",
+    internal_embedding_remote_source_schema: str = "",
+    internal_embedding_remote_source: str = "",
 ) -> HanaStore:
     """Build a store without running __init__ (which needs a live DB)."""
     store = object.__new__(HanaStore)
@@ -39,6 +43,12 @@ def _bare_store(
     store.index_fields = ["$"]
     store.embeddings = None
     store.vector_column_type = vector_column_type
+    store.use_internal_embeddings = use_internal_embeddings
+    store.internal_embedding_model_id = internal_embedding_model_id
+    store.internal_embedding_remote_source_schema = (
+        internal_embedding_remote_source_schema
+    )
+    store.internal_embedding_remote_source = internal_embedding_remote_source
     return store
 
 
@@ -283,3 +293,99 @@ def test_vector_insert_params_pairs_rows_with_serialized_vectors() -> None:
     count = struct.unpack_from("<I", blob, 0)[0]
     assert count == 2
     assert list(struct.unpack_from("<2f", blob, 4)) == pytest.approx([3.0, 4.0])
+
+
+# --------------------------------------------------------------------------- #
+# Internal (in-database) embeddings
+# --------------------------------------------------------------------------- #
+def _internal_store(
+    *, remote_source_schema: str = "", remote_source: str = "", **kw: object
+) -> HanaStore:
+    return _bare_store(
+        index_config={},
+        embedding_dims=4,
+        use_internal_embeddings=True,
+        internal_embedding_model_id="SAP_NEB.20240715",
+        internal_embedding_remote_source_schema=remote_source_schema,
+        internal_embedding_remote_source=remote_source,
+        **kw,  # type: ignore[arg-type]
+    )
+
+
+def test_vector_embedding_sql_and_params_three_arg_form() -> None:
+    store = _internal_store()
+    sql, params = store._vector_embedding_sql_and_params("hello", "QUERY")
+    assert sql == "VECTOR_EMBEDDING(?, 'QUERY', ?)"
+    assert params == ("hello", "SAP_NEB.20240715")
+
+
+def test_vector_embedding_sql_and_params_remote_source_form() -> None:
+    store = _internal_store(remote_source_schema="REMOTE", remote_source="SRC")
+    sql, params = store._vector_embedding_sql_and_params("doc", "DOCUMENT")
+    assert sql == "VECTOR_EMBEDDING(?, 'DOCUMENT', ?, ?, ?)"
+    assert params == ("doc", "SAP_NEB.20240715", "REMOTE", "SRC")
+
+
+def test_vector_embedding_sql_and_params_rejects_bad_kind() -> None:
+    store = _internal_store()
+    with pytest.raises(ValueError):
+        store._vector_embedding_sql_and_params("x", "SENTENCE")
+
+
+def test_insert_vector_internal_sql_embeds_in_db() -> None:
+    store = _internal_store()
+    sql = store._insert_vector_internal_sql
+    assert sql.startswith("INSERT INTO")
+    assert '("PREFIX", "KEY", "FIELD_NAME", "EMBEDDING")' in sql
+    # the embedding value is computed in-database, not a bound blob param
+    assert "VALUES (?, ?, ?, VECTOR_EMBEDDING(?, 'DOCUMENT', ?))" in sql
+    assert "TO_HALF_VECTOR" not in sql
+
+
+def test_insert_vector_internal_sql_half_vector_wraps_embedding() -> None:
+    store = _internal_store(vector_column_type="HALF_VECTOR")
+    sql = store._insert_vector_internal_sql
+    assert "TO_HALF_VECTOR(VECTOR_EMBEDDING(?, 'DOCUMENT', ?))" in sql
+
+
+def test_vector_insert_internal_params_trails_embedding_params() -> None:
+    store = _internal_store()
+    index_rows = [("a", "k1", "$"), ("a", "k2", "title")]
+    index_texts = ["first", "second"]
+    params = store._vector_insert_internal_params(index_rows, index_texts)
+    assert params == [
+        ("a", "k1", "$", "first", "SAP_NEB.20240715"),
+        ("a", "k2", "title", "second", "SAP_NEB.20240715"),
+    ]
+
+
+def test_vector_insert_internal_params_with_remote_source() -> None:
+    store = _internal_store(remote_source_schema="REMOTE", remote_source="SRC")
+    params = store._vector_insert_internal_params([("a", "k", "$")], ["t"])
+    assert params == [("a", "k", "$", "t", "SAP_NEB.20240715", "REMOTE", "SRC")]
+
+
+def test_vector_search_sql_internal_embeds_query_in_db() -> None:
+    store = _internal_store()
+    sql, params = store._vector_search_sql(("users",))
+    assert "VECTOR_EMBEDDING(?, 'QUERY', ?)" in sql
+    assert "TO_REAL_VECTOR(?)" not in sql
+    # only namespace-prefix params are returned; the query-embedding params lead,
+    # supplied by the handler.
+    assert params == ["users", r"users.%"]
+
+
+def test_vector_search_sql_internal_half_vector_wraps_embedding() -> None:
+    store = _internal_store(vector_column_type="HALF_VECTOR")
+    sql, _ = store._vector_search_sql(("users",))
+    assert "TO_HALF_VECTOR(VECTOR_EMBEDDING(?, 'QUERY', ?))" in sql
+
+
+def test_validate_embedding_sql_probe_shape() -> None:
+    store = _internal_store()
+    embed_sql, _ = store._vector_embedding_sql_and_params("test", "QUERY")
+    probe = store._validate_embedding_sql(embed_sql)
+    assert probe == (
+        "SELECT COUNT(TO_NVARCHAR(VECTOR_EMBEDDING(?, 'QUERY', ?))) "
+        'AS "CNT" FROM sys.DUMMY'
+    )
