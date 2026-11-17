@@ -19,13 +19,11 @@ from typing import Any, TypedDict
 
 import pytest
 from hdbcli import dbapi
-from langgraph.store.base import IndexConfig, TTLConfig
+from langgraph.store.base import TTLConfig
 
 from langchain_hana.memorystores import AsyncHanaStore
-from tests.integration_tests.fake_embeddings import ConsistentFakeEmbeddings
 from tests.integration_tests.hana_test_utils import HanaTestUtils
-
-_DIMS = 10
+from tests.integration_tests.store_embedding_configs import STORE_CONFIG_IDS, resolve
 
 
 class _Tables(TypedDict):
@@ -48,14 +46,6 @@ def _conn_params() -> dict[str, Any]:
         "port": int(os.environ["HANA_DB_PORT"]),
         "user": os.environ["HANA_DB_USER"],
         "password": os.environ["HANA_DB_PASSWORD"],
-    }
-
-
-def _index_config() -> IndexConfig:
-    return {
-        "dims": _DIMS,
-        "embed": ConsistentFakeEmbeddings(dimensionality=_DIMS),
-        "fields": ["text"],
     }
 
 
@@ -88,6 +78,27 @@ async def store() -> AsyncGenerator[AsyncHanaStore, None]:
         s = AsyncHanaStore(
             conn,
             schema_name=config.schema_name,
+            **_unique_tables(config.conn),
+        )
+        await s.setup()
+        yield s
+    finally:
+        await conn.close()
+
+
+@pytest.fixture(params=STORE_CONFIG_IDS)
+async def indexed_store(
+    request: pytest.FixtureRequest,
+) -> AsyncGenerator[AsyncHanaStore, None]:
+    """An indexed async store, parametrized over each embedding/column-type config."""
+    index_config, vector_column_type = resolve(request.param, config.conn)
+    conn = await dbapi.async_connect(**_conn_params())  # type: ignore[misc]
+    try:
+        s = AsyncHanaStore(
+            conn,
+            schema_name=config.schema_name,
+            index=index_config,
+            vector_column_type=vector_column_type,
             **_unique_tables(config.conn),
         )
         await s.setup()
@@ -213,83 +224,35 @@ async def test_ttl_expiry_refresh_and_sweep() -> None:
 
 # --------------------------------------------------------------------------- #
 # Vector / semantic search
+#
+# These run over every embedding/column-type config in STORE_CONFIG_IDS via the
+# parametrized ``indexed_store`` fixture.
 # --------------------------------------------------------------------------- #
-async def test_vector_search_ranks_by_similarity() -> None:
-    conn = await dbapi.async_connect(**_conn_params())  # type: ignore[misc]
-    try:
-        s = AsyncHanaStore(
-            conn,
-            schema_name=config.schema_name,
-            index=_index_config(),
-            **_unique_tables(config.conn),
-        )
-        await s.setup()
-        ns = ("memories",)
-        await s.aput(ns, "cats", {"text": "cats"})
-        await s.aput(ns, "dogs", {"text": "dogs"})
-        await s.aput(ns, "birds", {"text": "birds"})
+async def test_vector_search_ranks_by_similarity(
+    indexed_store: AsyncHanaStore,
+) -> None:
+    s = indexed_store
+    ns = ("memories",)
+    await s.aput(ns, "cats", {"text": "cats"})
+    await s.aput(ns, "dogs", {"text": "dogs"})
+    await s.aput(ns, "birds", {"text": "birds"})
 
-        results = await s.asearch(ns, query="cats")
-        assert results
-        assert results[0].key == "cats"
-        assert results[0].score is not None
-    finally:
-        await conn.close()
+    results = await s.asearch(ns, query="cats")
+    assert results
+    assert results[0].key == "cats"
+    assert results[0].score is not None
 
 
-def _half_vector_supported(conn: dbapi.Connection) -> bool:
-    cur = conn.cursor()
-    try:
-        cur.execute("SELECT TYPE_NAME FROM SYS.DATA_TYPES")
-        return "HALF_VECTOR" in {row[0] for row in cur.fetchall()}
-    finally:
-        cur.close()
-
-
-async def test_vector_search_half_vector_column() -> None:
-    if not _half_vector_supported(config.conn):
-        pytest.skip("HANA instance does not offer HALF_VECTOR")
-    conn = await dbapi.async_connect(**_conn_params())  # type: ignore[misc]
-    try:
-        s = AsyncHanaStore(
-            conn,
-            schema_name=config.schema_name,
-            index=_index_config(),
-            vector_column_type="HALF_VECTOR",
-            **_unique_tables(config.conn),
-        )
-        await s.setup()
-        ns = ("memories",)
-        await s.aput(ns, "cats", {"text": "cats"})
-        await s.aput(ns, "dogs", {"text": "dogs"})
-        await s.aput(ns, "birds", {"text": "birds"})
-
-        results = await s.asearch(ns, query="cats")
-        assert results
-        assert results[0].key == "cats"
-        assert results[0].score is not None
-    finally:
-        await conn.close()
-
-
-async def test_put_with_index_false_skips_embedding() -> None:
-    conn = await dbapi.async_connect(**_conn_params())  # type: ignore[misc]
-    try:
-        s = AsyncHanaStore(
-            conn,
-            schema_name=config.schema_name,
-            index=_index_config(),
-            **_unique_tables(config.conn),
-        )
-        await s.setup()
-        ns = ("memories",)
-        await s.aput(ns, "x", {"text": "hello"}, index=False)
-        # No embedding stored -> not returned by a vector query.
-        assert await s.asearch(ns, query="hello") == []
-        # But still retrievable by key and by metadata search.
-        assert await s.aget(ns, "x") is not None
-    finally:
-        await conn.close()
+async def test_put_with_index_false_skips_embedding(
+    indexed_store: AsyncHanaStore,
+) -> None:
+    s = indexed_store
+    ns = ("memories",)
+    await s.aput(ns, "x", {"text": "hello"}, index=False)
+    # No embedding stored -> not returned by a vector query.
+    assert await s.asearch(ns, query="hello") == []
+    # But still retrievable by key and by metadata search.
+    assert await s.aget(ns, "x") is not None
 
 
 # --------------------------------------------------------------------------- #
