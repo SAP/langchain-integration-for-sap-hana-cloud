@@ -29,6 +29,7 @@ from typing import Any
 from langchain_core.embeddings import Embeddings
 from langgraph.store.base import (
     BaseStore,
+    GetOp,
     IndexConfig,
     Item,
     ListNamespacesOp,
@@ -36,6 +37,7 @@ from langgraph.store.base import (
     Op,
     PutOp,
     SearchItem,
+    SearchOp,
     TTLConfig,
     ensure_embeddings,
     get_text_at_path,
@@ -425,6 +427,66 @@ class BaseHanaStore(BaseStore):
                 for i, text in enumerate(texts):
                     pairs.append((f"{path}[{i}]", text))
         return pairs
+
+    # -- batch handler helpers (pure; shared by sync and async) --------- #
+    def _group_get_ops(
+        self, get_ops: list[tuple[int, GetOp]]
+    ) -> dict[str, list[tuple[int, GetOp]]]:
+        """Group ``GetOp``s by their namespace ``PREFIX`` text, preserving order."""
+        by_ns: dict[str, list[tuple[int, GetOp]]] = {}
+        for idx, op in get_ops:
+            by_ns.setdefault(self._namespace_to_text(op.namespace), []).append(
+                (idx, op)
+            )
+        return by_ns
+
+    def _assign_get_results(
+        self,
+        namespace: tuple[str, ...],
+        rows: Iterable[Any],
+        items: list[tuple[int, GetOp]],
+        results: list[Any],
+    ) -> list[str]:
+        """Write fetched items into ``results`` and return the keys to refresh.
+
+        ``rows`` are the raw store rows for ``namespace``; each op's slot is filled
+        with the matching :class:`Item` (or ``None``). The returned list holds the
+        keys of ops that requested a TTL refresh and were actually found.
+        """
+        found = {row[0]: self._row_to_item(namespace, row) for row in rows}
+        for idx, op in items:
+            results[idx] = found.get(op.key)
+        return [op.key for _, op in items if op.refresh_ttl and op.key in found]
+
+    def _finalize_search(
+        self, op: SearchOp, candidates: list[SearchItem]
+    ) -> list[SearchItem]:
+        """Apply the metadata filter (if any) and the offset/limit page window."""
+        matched = [
+            item for item in candidates if self._matches_filter(item.value, op.filter)
+        ]
+        return matched[op.offset : op.offset + op.limit]
+
+    def _group_refresh_keys(
+        self, items: list[SearchItem]
+    ) -> list[tuple[str, list[str]]]:
+        """Group result items' keys by namespace ``PREFIX`` text for a TTL refresh."""
+        by_ns: dict[str, list[str]] = {}
+        for item in items:
+            by_ns.setdefault(self._namespace_to_text(item.namespace), []).append(
+                item.key
+            )
+        return list(by_ns.items())
+
+    def _vector_insert_params(
+        self,
+        index_rows: list[tuple[str, str, str]],
+        vectors: Sequence[Sequence[float]],
+    ) -> list[tuple[Any, ...]]:
+        """Build ``(prefix, key, field, serialized_vector)`` tuples for insertion."""
+        return [
+            (*row, self._serialize_vector(vec)) for row, vec in zip(index_rows, vectors)
+        ]
 
     # -- metadata filtering (python-side, mirrors InMemoryStore) -------- #
     @classmethod

@@ -197,20 +197,13 @@ class AsyncHanaStore(BaseHanaStore):
         get_ops: list[tuple[int, GetOp]],
         results: list[Result],
     ) -> None:
-        by_ns: dict[str, list[tuple[int, GetOp]]] = {}
-        for idx, op in get_ops:
-            by_ns.setdefault(self._namespace_to_text(op.namespace), []).append(
-                (idx, op)
-            )
+        by_ns = self._group_get_ops(get_ops)
         for ns_text, items in by_ns.items():
             namespace = self._decode_ns(ns_text)
             keys = [op.key for _, op in items]
             await cur.execute(self._get_sql(len(keys)), (ns_text, *keys))
             rows = await cur.fetchall()
-            found = {row[0]: self._row_to_item(namespace, row) for row in rows}
-            for idx, op in items:
-                results[idx] = found.get(op.key)
-            refresh = [op.key for _, op in items if op.refresh_ttl and op.key in found]
+            refresh = self._assign_get_results(namespace, rows, items, results)
             if self._omit_expired and refresh:
                 await cur.execute(
                     self._refresh_ttl_sql(len(refresh)), (ns_text, *refresh)
@@ -238,10 +231,7 @@ class AsyncHanaStore(BaseHanaStore):
                     index_texts.append(text)
         if index_texts and self.embeddings is not None:
             vectors = await self.embeddings.aembed_documents(index_texts)
-            params = [
-                (*index_rows[i], self._serialize_vector(vectors[i]))
-                for i in range(len(index_rows))
-            ]
+            params = self._vector_insert_params(index_rows, vectors)
             await cur.executemany(self._insert_vector_sql, params)
 
     async def _abatch_search(
@@ -271,12 +261,7 @@ class AsyncHanaStore(BaseHanaStore):
                     results[idx] = candidates
                     await self._arefresh_search_ttl(cur, op, candidates)
                     continue
-            matched = [
-                item
-                for item in candidates
-                if self._matches_filter(item.value, op.filter)
-            ]
-            page = matched[op.offset : op.offset + op.limit]
+            page = self._finalize_search(op, candidates)
             results[idx] = page
             await self._arefresh_search_ttl(cur, op, page)
 
@@ -285,12 +270,7 @@ class AsyncHanaStore(BaseHanaStore):
     ) -> None:
         if not (self._omit_expired and op.refresh_ttl and items):
             return
-        by_ns: dict[str, list[str]] = {}
-        for item in items:
-            by_ns.setdefault(self._namespace_to_text(item.namespace), []).append(
-                item.key
-            )
-        for ns_text, keys in by_ns.items():
+        for ns_text, keys in self._group_refresh_keys(items):
             await cur.execute(self._refresh_ttl_sql(len(keys)), (ns_text, *keys))
 
     async def _abatch_list(
