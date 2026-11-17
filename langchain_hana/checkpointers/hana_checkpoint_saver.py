@@ -193,6 +193,7 @@ class HanaCheckpointSaver(BaseHanaCheckpointSaver):
         """
         where_clause, params = self._build_where_clause(config, filter, before)
         list_checkpoints_sql = self._list_checkpoints_sql(where_clause, limit)
+        results: list[CheckpointTuple] = []
         with self._cursor(transaction=False) as cur:
             cur.execute(list_checkpoints_sql, tuple(params))
             checkpoint_rows = cur.fetchall() if cur.has_result_set() else []
@@ -213,15 +214,18 @@ class HanaCheckpointSaver(BaseHanaCheckpointSaver):
                     (thread_id, checkpoint_ns, str(checkpoint_id)),
                 )
                 write_rows = cur.fetchall() if cur.has_result_set() else []
-                yield self._build_checkpoint_tuple(
-                    thread_id=thread_id,
-                    checkpoint_ns=checkpoint_ns,
-                    checkpoint_id=checkpoint_id,
-                    parent_checkpoint_id=parent_checkpoint_id,
-                    checkpoint_value=checkpoint_value,
-                    metadata=metadata,
-                    write_rows=write_rows,
+                results.append(
+                    self._build_checkpoint_tuple(
+                        thread_id=thread_id,
+                        checkpoint_ns=checkpoint_ns,
+                        checkpoint_id=checkpoint_id,
+                        parent_checkpoint_id=parent_checkpoint_id,
+                        checkpoint_value=checkpoint_value,
+                        metadata=metadata,
+                        write_rows=write_rows,
+                    )
                 )
+        yield from results
 
     def _load_checkpoint(
         self,

@@ -162,6 +162,39 @@ def test_list_ordering_limit_and_filter(saver: HanaCheckpointSaver) -> None:
     assert len(filtered) == 1 and filtered[0].checkpoint["id"] == c2["id"]
 
 
+def test_get_tuple_during_list_iteration_does_not_deadlock(
+    saver: HanaCheckpointSaver,
+) -> None:
+    """A ``get_tuple`` issued mid-``list`` must not deadlock on the saver lock.
+
+    ``list`` must materialize its rows and yield them after the cursor/lock scope
+    closes; yielding from inside it would hold the lock across the caller's own
+    ``get_tuple``.
+    """
+    base = _config("t-deadlock")
+    c1 = empty_checkpoint()
+    cfg1 = saver.put(base, c1, {"source": "input", "step": 1}, {})
+    c2 = create_checkpoint(c1, {}, step=2)
+    saver.put(cfg1, c2, {"source": "loop", "step": 2}, {})
+
+    iterator = saver.list(_config("t-deadlock"))
+    first = next(iterator)  # generator deliberately left open mid-iteration
+
+    # The lock must already be released. Probed without blocking so a regression
+    # fails cleanly here instead of hanging the suite on the get_tuple below.
+    acquired = saver.lock.acquire(blocking=False)
+    assert acquired, "list() held the saver lock across yield (deadlock risk)"
+    saver.lock.release()
+
+    # The actual scenario: a get while the list generator is still open.
+    got = saver.get_tuple(first.config)
+    assert got is not None
+    assert got.checkpoint["id"] == first.checkpoint["id"] == c2["id"]
+
+    # The partially-consumed iterator still drains correctly afterwards.
+    assert [t.checkpoint["id"] for t in iterator] == [c1["id"]]
+
+
 def test_put_writes_and_pending_writes(saver: HanaCheckpointSaver) -> None:
     chkpnt = empty_checkpoint()
     cfg = saver.put(_config("t-writes"), chkpnt, {"source": "input", "step": 1}, {})
