@@ -222,7 +222,8 @@ class BaseHanaStore(BaseStore):
             f"MERGE INTO {self._store_ref} t USING ("
             'SELECT ? "PREFIX", ? "KEY", ? "VALUE", '
             "CASE WHEN ? IS NULL THEN NULL "
-            'ELSE ADD_SECONDS(CURRENT_UTCTIMESTAMP, ? * 60) END "EXPIRES_AT", '
+            "ELSE ADD_SECONDS(CURRENT_UTCTIMESTAMP, CAST(? AS DOUBLE) * 60) END "
+            '"EXPIRES_AT", '
             '? "TTL_MINUTES" FROM DUMMY) s '
             'ON (t."PREFIX" = s."PREFIX" AND t."KEY" = s."KEY") '
             'WHEN MATCHED THEN UPDATE SET t."VALUE" = s."VALUE", '
@@ -255,16 +256,19 @@ class BaseHanaStore(BaseStore):
         return (prefix, key, value_json, ttl, ttl, ttl)
 
     def _search_namespace_clause(
-        self, prefix: tuple[str, ...]
+        self, prefix: tuple[str, ...], alias: str = ""
     ) -> tuple[str, list[Any]]:
         """``("PREFIX" = ? OR "PREFIX" LIKE ? ESCAPE '\\')`` + params for a prefix.
 
         Matches the namespace itself and any descendant namespace, with LIKE
-        metacharacters in the prefix escaped so they are treated literally.
+        metacharacters in the prefix escaped so they are treated literally. When
+        ``alias`` is given the ``PREFIX`` column is qualified (e.g. ``s."PREFIX"``),
+        needed where the surrounding query joins tables that both have a ``PREFIX``.
         """
+        col = f'{alias}."PREFIX"' if alias else '"PREFIX"'
         prefix_text = self._namespace_to_text(prefix)
         like = self._escape_like(prefix_text) + ".%"
-        return ('("PREFIX" = ? OR "PREFIX" LIKE ? ESCAPE \'\\\')', [prefix_text, like])
+        return (f"({col} = ? OR {col} LIKE ? ESCAPE '\\')", [prefix_text, like])
 
     def _search_sql(
         self, prefix: tuple[str, ...], ordered_limited: bool, limit: int, offset: int
@@ -287,7 +291,7 @@ class BaseHanaStore(BaseStore):
         ``VALUE`` is an NCLOB and cannot be grouped, so similarity is aggregated per
         ``(PREFIX, KEY)`` in a sub-select and then joined back to the store.
         """
-        clause, params = self._search_namespace_clause(prefix)
+        clause, params = self._search_namespace_clause(prefix, alias="s")
         sql = (
             "WITH scored AS ("
             'SELECT "PREFIX", "KEY", '
