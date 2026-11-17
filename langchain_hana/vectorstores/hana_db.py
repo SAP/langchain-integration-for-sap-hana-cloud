@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import struct
 import uuid
 from typing import (
     Any,
@@ -24,13 +23,19 @@ from langchain_core.vectorstores.utils import maximal_marginal_relevance
 
 from langchain_hana.embeddings import HanaInternalEmbeddings
 from langchain_hana.utils import (
+    DEFAULT_VECTOR_COLUMN_TYPE,
     DistanceStrategy,
+    _deserialize_vector,
     _json_value,
     _sanitize_name,
+    _serialize_vector,
     _table_exists,
     _table_ref,
+    _to_target_vector_type,
+    _validate_datatype_support,
     _validate_k,
     _validate_k_and_fetch_k,
+    _validate_vector_column_type,
 )
 from langchain_hana.vectorstores.create_where_clause import (
     CreateWhereClause,
@@ -49,8 +54,6 @@ HANA_DISTANCE_FUNCTION: dict = {
     DistanceStrategy.EUCLIDEAN_DISTANCE: ("L2DISTANCE", "ASC"),
 }
 
-VECTOR_COLUMN_SQL_TYPES = ["REAL_VECTOR", "HALF_VECTOR"]
-
 INTERMEDIATE_TABLE_NAME = "intermediate_result"
 
 default_distance_strategy = DistanceStrategy.COSINE
@@ -59,7 +62,7 @@ default_content_column: str = "VEC_TEXT"
 default_metadata_column: str = "VEC_META"
 default_vector_column: str = "VEC_VECTOR"
 default_vector_column_length: int = -1  # -1 means dynamic length
-default_vector_column_type: str = "REAL_VECTOR"
+default_vector_column_type: str = DEFAULT_VECTOR_COLUMN_TYPE
 
 
 class HanaDB(VectorStore):
@@ -314,81 +317,13 @@ class HanaDB(VectorStore):
     def _sanitize_vector_column_type(
         vector_column_type: str, connection: dbapi.Connection
     ) -> str:
-        vector_column_type_upper = vector_column_type.upper()
-        if vector_column_type_upper not in VECTOR_COLUMN_SQL_TYPES:
-            raise ValueError(
-                f"Unsupported vector_column_type: {vector_column_type}. "
-                f"Must be one of {', '.join(VECTOR_COLUMN_SQL_TYPES)}"
-            )
-        HanaDB._validate_datatype_support(connection, vector_column_type_upper)
+        vector_column_type_upper = _validate_vector_column_type(vector_column_type)
+        _validate_datatype_support(connection, vector_column_type_upper)
         return vector_column_type_upper
-
-    @staticmethod
-    def _get_min_supported_version(datatype: str) -> str:
-        if datatype == "HALF_VECTOR":
-            return "2025.15 (QRC 2/2025)"
-        elif datatype == "REAL_VECTOR":
-            return "2024.2 (QRC 1/2024)"
-        else:
-            raise ValueError(f"Unknown datatype: '{datatype}'")
-
-    @staticmethod
-    def _get_instance_version(connection: dbapi.Connection) -> Optional[str]:
-        cursor = connection.cursor()
-        try:
-            cursor.execute("SELECT CLOUD_VERSION FROM SYS.M_DATABASE;")
-            result = cursor.fetchone()
-            if result is None:
-                return None
-            return result[0]
-        except dbapi.Error:
-            return None
-        finally:
-            cursor.close()
-
-    @staticmethod
-    def _get_available_datatypes(connection: dbapi.Connection) -> set:
-        cur = connection.cursor()
-        try:
-            cur.execute("SELECT TYPE_NAME FROM SYS.DATA_TYPES")
-            if cur.has_result_set():
-                rows = cur.fetchall()
-                available_types = {row[0] for row in rows}
-                return available_types
-            raise ValueError("No data types returned by the database.")
-        finally:
-            cur.close()
-
-    @staticmethod
-    def _validate_datatype_support(connection: dbapi.Connection, datatype: str) -> bool:
-        if datatype in HanaDB._get_available_datatypes(connection):
-            return True
-
-        # Get instance version, but don't include it in error if retrieval fails
-        error_message = f"'{datatype}' is not available on this HANA instance.\n"
-
-        # Only include instance version line if it was successfully retrieved
-        instance_version = HanaDB._get_instance_version(connection)
-        if instance_version:
-            error_message += f"Instance version: {instance_version}\n"
-
-        min_instance_version = HanaDB._get_min_supported_version(datatype)
-        error_message += f"Minimum required instance version: {min_instance_version}"
-
-        raise ValueError(error_message)
 
     def _serialize_binary_format(self, values: list[float]) -> bytes:
         # Converts a list of floats into binary format
-        if self.vector_column_type == "HALF_VECTOR":
-            # 2-byte half-precision float serialization
-            return struct.pack(f"<I{len(values)}e", len(values), *values)
-        elif self.vector_column_type == "REAL_VECTOR":
-            # 4-byte float serialization (standard FVECS format)
-            return struct.pack(f"<I{len(values)}f", len(values), *values)
-        else:
-            raise ValueError(
-                f"Unsupported vector column type: {self.vector_column_type}"
-            )
+        return _serialize_vector(values, self.vector_column_type)
 
     def _handle_vector_output_type(self, vector: Any) -> list[float]:
         # Handles different vector output types from HANA DB
@@ -405,17 +340,7 @@ class HanaDB(VectorStore):
 
     def _deserialize_binary_format(self, fvecs: memoryview) -> list[float]:
         # Extracts a list of floats from binary format
-        dim = struct.unpack_from("<I", fvecs, 0)[0]
-        if self.vector_column_type == "HALF_VECTOR":
-            # 2-byte half-precision float deserialization
-            return list(struct.unpack_from(f"<{dim}e", fvecs, 4))
-        elif self.vector_column_type == "REAL_VECTOR":
-            # 4-byte float deserialization (standard FVECS format)
-            return list(struct.unpack_from(f"<{dim}f", fvecs, 4))
-        else:
-            raise ValueError(
-                f"Unsupported vector column type: {self.vector_column_type}"
-            )
+        return _deserialize_vector(fvecs, self.vector_column_type)
 
     def _split_off_special_metadata(
         self, metadata: dict
@@ -445,10 +370,7 @@ class HanaDB(VectorStore):
         Returns:
             str: The expression wrapped with the appropriate conversion function.
         """
-        if self.vector_column_type in VECTOR_COLUMN_SQL_TYPES:
-            return f"TO_{self.vector_column_type}({expr})"
-        else:
-            raise ValueError(f"Unsupported vector type: {self.vector_column_type}")
+        return _to_target_vector_type(expr, self.vector_column_type)
 
     def _convert_vector_embedding_to_column_type(self, expr: str) -> str:
         """
@@ -684,7 +606,7 @@ class HanaDB(VectorStore):
             f'"{self.metadata_column}", '
             f'"{self.vector_column}"{specific_metadata_columns_string}) '
             f"VALUES (?, ?, {vector_embedding_sql} "
-            f"{(', ?'* len(self.specific_metadata_columns))});"
+            f"{(', ?' * len(self.specific_metadata_columns))});"
         )
 
         # Insert data into the table
@@ -820,7 +742,7 @@ class HanaDB(VectorStore):
             f'"{self.metadata_column}", '
             f'"{self.vector_column}"{specific_metadata_columns_string}) '
             f"VALUES (?, ?, ? "
-            f"{(', ?'* len(self.specific_metadata_columns))});"
+            f"{(', ?' * len(self.specific_metadata_columns))});"
         )
 
         # Insert data into the table

@@ -37,7 +37,11 @@ from langchain_hana.memorystores.base_hana_store import (
     _DEFAULT_VECTORS_TABLE,
     BaseHanaStore,
 )
-from langchain_hana.utils import _table_exists
+from langchain_hana.utils import (
+    DEFAULT_VECTOR_COLUMN_TYPE,
+    _table_exists,
+    _validate_datatype_support,
+)
 
 
 class HanaStore(BaseHanaStore):
@@ -51,6 +55,8 @@ class HanaStore(BaseHanaStore):
         migrations_table: Name of the migrations (version ledger) table.
         store_table: Name of the key-value store table.
         vectors_table: Name of the per-field embeddings table.
+        vector_column_type: Stored embedding column type, ``"REAL_VECTOR"`` (default)
+            or ``"HALF_VECTOR"`` (requires a HANA instance that offers the type).
 
     Example:
         >>> from hdbcli import dbapi
@@ -72,6 +78,7 @@ class HanaStore(BaseHanaStore):
         migrations_table: str = _DEFAULT_MIGRATIONS_TABLE,
         store_table: str = _DEFAULT_STORE_TABLE,
         vectors_table: str = _DEFAULT_VECTORS_TABLE,
+        vector_column_type: str = DEFAULT_VECTOR_COLUMN_TYPE,
     ) -> None:
         super().__init__(
             index=index,
@@ -80,6 +87,7 @@ class HanaStore(BaseHanaStore):
             migrations_table=migrations_table,
             store_table=store_table,
             vectors_table=vectors_table,
+            vector_column_type=vector_column_type,
         )
         self.connection = connection
         # Disable autocommit so _cursor() controls the transaction boundary and
@@ -117,6 +125,7 @@ class HanaStore(BaseHanaStore):
             if self.index_config is not None and not _table_exists(
                 self.connection, self.vectors_table, self.schema_name
             ):
+                _validate_datatype_support(self.connection, self.vector_column_type)
                 cur.execute(self._vectors_ddl())
             self.connection.commit()
         finally:
