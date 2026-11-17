@@ -237,6 +237,41 @@ async def test_vector_search_ranks_by_similarity() -> None:
         await conn.close()
 
 
+def _half_vector_supported(conn: dbapi.Connection) -> bool:
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT TYPE_NAME FROM SYS.DATA_TYPES")
+        return "HALF_VECTOR" in {row[0] for row in cur.fetchall()}
+    finally:
+        cur.close()
+
+
+async def test_vector_search_half_vector_column() -> None:
+    if not _half_vector_supported(config.conn):
+        pytest.skip("HANA instance does not offer HALF_VECTOR")
+    conn = await dbapi.async_connect(**_conn_params())  # type: ignore[misc]
+    try:
+        s = AsyncHanaStore(
+            conn,
+            schema_name=config.schema_name,
+            index=_index_config(),
+            vector_column_type="HALF_VECTOR",
+            **_unique_tables(config.conn),
+        )
+        await s.setup()
+        ns = ("memories",)
+        await s.aput(ns, "cats", {"text": "cats"})
+        await s.aput(ns, "dogs", {"text": "dogs"})
+        await s.aput(ns, "birds", {"text": "birds"})
+
+        results = await s.asearch(ns, query="cats")
+        assert results
+        assert results[0].key == "cats"
+        assert results[0].score is not None
+    finally:
+        await conn.close()
+
+
 async def test_put_with_index_false_skips_embedding() -> None:
     conn = await dbapi.async_connect(**_conn_params())  # type: ignore[misc]
     try:

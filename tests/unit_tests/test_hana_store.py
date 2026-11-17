@@ -1,18 +1,22 @@
-"""Unit tests for the HANA memory store helpers and SQL builders (DB-free)."""
+"""Unit tests for ``HanaStore`` SQL builders and batch-handler helpers (DB-free).
+
+These exercise the per-store SQL builders and the pure batch-handler helpers through a
+``HanaStore`` instance constructed with ``object.__new__`` (so no live database is
+needed). Class-level ``BaseHanaStore`` helpers that can be called without an instance
+live in ``test_base_hana_store.py``.
+"""
+
+import struct
 
 import pytest
 from langgraph.store.base import (
     GetOp,
-    ListNamespacesOp,
-    MatchCondition,
-    Op,
     PutOp,
     SearchItem,
     SearchOp,
 )
 
 from langchain_hana.memorystores import HanaStore
-from langchain_hana.memorystores.base_hana_store import BaseHanaStore
 
 
 def _bare_store(
@@ -21,6 +25,7 @@ def _bare_store(
     ttl_config: object | None = None,
     index_config: object | None = None,
     embedding_dims: int = 0,
+    vector_column_type: str = "REAL_VECTOR",
 ) -> HanaStore:
     """Build a store without running __init__ (which needs a live DB)."""
     store = object.__new__(HanaStore)
@@ -33,129 +38,42 @@ def _bare_store(
     store.embedding_dims = embedding_dims
     store.index_fields = ["$"]
     store.embeddings = None
+    store.vector_column_type = vector_column_type
     return store
 
 
-# --------------------------------------------------------------------------- #
-# Namespace encode/decode
-# --------------------------------------------------------------------------- #
-def test_namespace_roundtrip() -> None:
-    ns = ("users", "123", "prefs")
-    text = BaseHanaStore._namespace_to_text(ns)
-    assert text == "users.123.prefs"
-    assert BaseHanaStore._decode_ns(text) == ns
-
-
-def test_escape_like_escapes_metacharacters() -> None:
-    assert BaseHanaStore._escape_like(r"a%b_c\d") == r"a\%b\_c\\d"
+def _search_item(namespace: tuple[str, ...], key: str, value: dict) -> SearchItem:
+    return SearchItem(
+        namespace=namespace,
+        key=key,
+        value=value,
+        created_at="2024-01-01",  # type: ignore[arg-type]
+        updated_at="2024-01-02",  # type: ignore[arg-type]
+    )
 
 
 # --------------------------------------------------------------------------- #
 # Vector (de)serialization
 # --------------------------------------------------------------------------- #
 def test_serialize_vector_fvecs_layout() -> None:
-    import struct
-
     values = [0.5, -1.25, 3.0]
-    blob = BaseHanaStore._serialize_vector(values)
+    blob = _bare_store()._serialize_vector(values)
     count = struct.unpack_from("<I", blob, 0)[0]
     assert count == 3
     unpacked = list(struct.unpack_from("<3f", blob, 4))
     assert unpacked == pytest.approx(values)
 
 
-def test_vector_to_str_literal() -> None:
-    assert BaseHanaStore._vector_to_str([1.0, 2.5]) == "[1.0,2.5]"
-
-
-# --------------------------------------------------------------------------- #
-# Op grouping / dedupe
-# --------------------------------------------------------------------------- #
-def test_group_ops_preserves_index_and_counts() -> None:
-    ops: list[Op] = [
-        GetOp(namespace=("a",), key="k1"),
-        PutOp(namespace=("a",), key="k2", value={"x": 1}),
-        GetOp(namespace=("a",), key="k3"),
-    ]
-    grouped, total = BaseHanaStore._group_ops(ops)
-    assert total == 3
-    assert [idx for idx, _ in grouped[GetOp]] == [0, 2]
-    assert [idx for idx, _ in grouped[PutOp]] == [1]
-
-
-def test_dedupe_put_ops_last_wins() -> None:
-    ops = [
-        (0, PutOp(namespace=("a",), key="k", value={"v": 1})),
-        (1, PutOp(namespace=("a",), key="k", value={"v": 2})),
-    ]
-    deduped = BaseHanaStore._dedupe_put_ops(ops)
-    assert list(deduped) == [("a", "k")]
-    assert deduped[("a", "k")].value == {"v": 2}
-
-
-# --------------------------------------------------------------------------- #
-# Metadata filtering (parity with InMemoryStore semantics)
-# --------------------------------------------------------------------------- #
-def test_matches_filter_scalar_and_operators() -> None:
-    value = {"color": "red", "score": 5}
-    assert BaseHanaStore._matches_filter(value, {"color": "red"})
-    assert not BaseHanaStore._matches_filter(value, {"color": "blue"})
-    assert BaseHanaStore._matches_filter(value, {"score": {"$gte": 5}})
-    assert BaseHanaStore._matches_filter(value, {"score": {"$lt": 10, "$gt": 1}})
-    assert not BaseHanaStore._matches_filter(value, {"score": {"$lt": 5}})
-    assert BaseHanaStore._matches_filter(value, None)
-
-
-def test_matches_filter_nested_and_list() -> None:
-    value = {"meta": {"a": 1, "b": 2}, "tags": [1, 2, 3]}
-    assert BaseHanaStore._matches_filter(value, {"meta": {"a": 1}})
-    assert not BaseHanaStore._matches_filter(value, {"meta": {"a": 9}})
-    assert BaseHanaStore._matches_filter(value, {"tags": [1, 2, 3]})
-    assert not BaseHanaStore._matches_filter(value, {"tags": [1, 2]})
-
-
-def test_apply_operator_rejects_unknown() -> None:
-    with pytest.raises(ValueError):
-        BaseHanaStore._apply_operator(1, "$in", [1, 2])
-
-
-# --------------------------------------------------------------------------- #
-# Namespace listing
-# --------------------------------------------------------------------------- #
-def test_does_match_prefix_suffix_wildcard() -> None:
-    key = ("users", "123", "prefs")
-    assert BaseHanaStore._does_match(
-        MatchCondition(match_type="prefix", path=("users",)), key
-    )
-    assert BaseHanaStore._does_match(
-        MatchCondition(match_type="prefix", path=("users", "*")), key
-    )
-    assert BaseHanaStore._does_match(
-        MatchCondition(match_type="suffix", path=("prefs",)), key
-    )
-    assert not BaseHanaStore._does_match(
-        MatchCondition(match_type="prefix", path=("orgs",)), key
-    )
-
-
-def test_filter_namespaces_dedupe_depth_and_paginate() -> None:
-    prefixes = ["a.b.c", "a.b.d", "a.x", "z"]
-    op = ListNamespacesOp(match_conditions=(), max_depth=2, limit=10, offset=0)
-    result = BaseHanaStore._filter_namespaces(prefixes, op)
-    # depth-truncated to 2 and deduped: ("a","b") appears once
-    assert result == [("a", "b"), ("a", "x"), ("z",)]
-
-
-def test_filter_namespaces_prefix_condition() -> None:
-    prefixes = ["users.1", "users.2", "orgs.1"]
-    op = ListNamespacesOp(
-        match_conditions=(MatchCondition(match_type="prefix", path=("users",)),),
-        max_depth=None,
-        limit=10,
-        offset=0,
-    )
-    result = BaseHanaStore._filter_namespaces(prefixes, op)
-    assert result == [("users", "1"), ("users", "2")]
+def test_serialize_vector_half_precision_layout() -> None:
+    values = [0.5, -1.25, 3.0]
+    store = _bare_store(vector_column_type="HALF_VECTOR")
+    blob = store._serialize_vector(values)
+    # half precision is 2 bytes/element: 4-byte count header + 3 * 2 bytes
+    assert len(blob) == 4 + 3 * 2
+    count = struct.unpack_from("<I", blob, 0)[0]
+    assert count == 3
+    unpacked = list(struct.unpack_from("<3e", blob, 4))
+    assert unpacked == pytest.approx(values)
 
 
 # --------------------------------------------------------------------------- #
@@ -213,6 +131,15 @@ def test_vector_search_sql_shape_and_schema_ref() -> None:
     assert params == ["users", r"users.%"]
 
 
+def test_vector_search_sql_half_vector_conversion() -> None:
+    store = _bare_store(
+        index_config={}, embedding_dims=4, vector_column_type="HALF_VECTOR"
+    )
+    sql, _ = store._vector_search_sql(("users",))
+    assert "TO_HALF_VECTOR(?)" in sql
+    assert "TO_REAL_VECTOR(?)" not in sql
+
+
 def test_search_sql_limits_in_sql_when_ordered() -> None:
     store = _bare_store()
     sql, params = store._search_sql(("a",), True, 5, 2)
@@ -262,6 +189,15 @@ def test_vectors_ddl_uses_dims() -> None:
     assert 'PRIMARY KEY ("PREFIX", "KEY", "FIELD_NAME")' in ddl
 
 
+def test_vectors_ddl_half_vector_column_type() -> None:
+    store = _bare_store(
+        index_config={}, embedding_dims=16, vector_column_type="HALF_VECTOR"
+    )
+    ddl = store._vectors_ddl()
+    assert "HALF_VECTOR(16)" in ddl
+    assert "REAL_VECTOR" not in ddl
+
+
 # --------------------------------------------------------------------------- #
 # Batch handler helpers (pure; shared by sync and async)
 # --------------------------------------------------------------------------- #
@@ -301,16 +237,6 @@ def test_assign_get_results_fills_slots_and_returns_refresh_keys() -> None:
     assert refresh == ["k1"]
 
 
-def _search_item(namespace: tuple[str, ...], key: str, value: dict) -> SearchItem:
-    return SearchItem(
-        namespace=namespace,
-        key=key,
-        value=value,
-        created_at="2024-01-01",  # type: ignore[arg-type]
-        updated_at="2024-01-02",  # type: ignore[arg-type]
-    )
-
-
 def test_finalize_search_filters_then_pages() -> None:
     store = _bare_store()
     candidates = [
@@ -345,8 +271,6 @@ def test_group_refresh_keys_groups_by_namespace() -> None:
 
 
 def test_vector_insert_params_pairs_rows_with_serialized_vectors() -> None:
-    import struct
-
     store = _bare_store(index_config={}, embedding_dims=2)
     index_rows = [("a", "k1", "$"), ("a", "k2", "title")]
     vectors = [[1.0, 2.0], [3.0, 4.0]]
