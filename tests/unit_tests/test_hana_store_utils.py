@@ -182,6 +182,14 @@ def test_merge_store_sql_preserves_created_at() -> None:
     assert "CREATED_AT" not in update_branch
 
 
+def test_merge_store_sql_casts_ttl_to_double() -> None:
+    # Without the CAST, HANA infers the bound TTL param as INTEGER and truncates
+    # fractional minutes (e.g. 0.02) to 0, so EXPIRES_AT lands in the past.
+    store = _bare_store()
+    sql = store._merge_store_sql
+    assert "ADD_SECONDS(CURRENT_UTCTIMESTAMP, CAST(? AS DOUBLE) * 60)" in sql
+
+
 def test_merge_store_params_shape() -> None:
     store = _bare_store()
     op = PutOp(namespace=("a",), key="k", value={"v": 1}, ttl=5.0)
@@ -196,6 +204,9 @@ def test_vector_search_sql_shape_and_schema_ref() -> None:
     assert "TO_REAL_VECTOR(?)" in sql
     assert '"S"."LANGGRAPH_STORE_VECTORS"' in sql
     assert '"S"."LANGGRAPH_STORE"' in sql
+    # PREFIX in the WHERE clause must be alias-qualified: the outer query joins the
+    # store and the scored sub-select, both of which expose a PREFIX column.
+    assert '(s."PREFIX" = ? OR s."PREFIX" LIKE ?' in sql
     # namespace prefix params: exact + descendant LIKE
     assert params == ["users", r"users.%"]
 
