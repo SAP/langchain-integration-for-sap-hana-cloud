@@ -7,6 +7,8 @@ from langgraph.store.base import (
     MatchCondition,
     Op,
     PutOp,
+    SearchItem,
+    SearchOp,
 )
 
 from langchain_hana.memorystores import HanaStore
@@ -236,3 +238,102 @@ def test_vectors_ddl_uses_dims() -> None:
     ddl = store._vectors_ddl()
     assert "REAL_VECTOR(16)" in ddl
     assert 'PRIMARY KEY ("PREFIX", "KEY", "FIELD_NAME")' in ddl
+
+
+# --------------------------------------------------------------------------- #
+# Batch handler helpers (pure; shared by sync and async)
+# --------------------------------------------------------------------------- #
+def test_group_get_ops_groups_by_namespace_preserving_order() -> None:
+    store = _bare_store()
+    get_ops = [
+        (0, GetOp(namespace=("a",), key="k1")),
+        (1, GetOp(namespace=("b",), key="k2")),
+        (2, GetOp(namespace=("a",), key="k3")),
+    ]
+    grouped = store._group_get_ops(get_ops)
+    assert list(grouped) == ["a", "b"]
+    assert [op.key for _, op in grouped["a"]] == ["k1", "k3"]
+    assert [op.key for _, op in grouped["b"]] == ["k2"]
+
+
+def test_assign_get_results_fills_slots_and_returns_refresh_keys() -> None:
+    store = _bare_store()
+    namespace = ("a",)
+    # rows are (key, value_json, created_at, updated_at)
+    rows = [
+        ("k1", '{"v": 1}', "2024-01-01", "2024-01-02"),
+        ("k3", '{"v": 3}', "2024-01-01", "2024-01-02"),
+    ]
+    items = [
+        (0, GetOp(namespace=namespace, key="k1", refresh_ttl=True)),
+        (1, GetOp(namespace=namespace, key="k2", refresh_ttl=True)),
+        (2, GetOp(namespace=namespace, key="k3", refresh_ttl=False)),
+    ]
+    results: list[object] = [None, None, None]
+    refresh = store._assign_get_results(namespace, rows, items, results)
+    assert results[0].value == {"v": 1}  # type: ignore[union-attr]
+    assert results[1] is None  # not found
+    assert results[2].value == {"v": 3}  # type: ignore[union-attr]
+    # only found keys that requested a refresh: k1 (found+refresh), not k2
+    # (missing), not k3 (refresh_ttl False)
+    assert refresh == ["k1"]
+
+
+def _search_item(namespace: tuple[str, ...], key: str, value: dict) -> SearchItem:
+    return SearchItem(
+        namespace=namespace,
+        key=key,
+        value=value,
+        created_at="2024-01-01",  # type: ignore[arg-type]
+        updated_at="2024-01-02",  # type: ignore[arg-type]
+    )
+
+
+def test_finalize_search_filters_then_pages() -> None:
+    store = _bare_store()
+    candidates = [
+        _search_item(("a",), "k1", {"color": "red"}),
+        _search_item(("a",), "k2", {"color": "blue"}),
+        _search_item(("a",), "k3", {"color": "red"}),
+        _search_item(("a",), "k4", {"color": "red"}),
+    ]
+    op = SearchOp(namespace_prefix=("a",), filter={"color": "red"}, limit=1, offset=1)
+    page = store._finalize_search(op, candidates)
+    # matches are k1, k3, k4; offset 1 limit 1 -> [k3]
+    assert [item.key for item in page] == ["k3"]
+
+
+def test_finalize_search_no_filter_returns_window() -> None:
+    store = _bare_store()
+    candidates = [_search_item(("a",), f"k{i}", {}) for i in range(5)]
+    op = SearchOp(namespace_prefix=("a",), filter=None, limit=2, offset=1)
+    page = store._finalize_search(op, candidates)
+    assert [item.key for item in page] == ["k1", "k2"]
+
+
+def test_group_refresh_keys_groups_by_namespace() -> None:
+    store = _bare_store()
+    items = [
+        _search_item(("a",), "k1", {}),
+        _search_item(("b",), "k2", {}),
+        _search_item(("a",), "k3", {}),
+    ]
+    grouped = store._group_refresh_keys(items)
+    assert grouped == [("a", ["k1", "k3"]), ("b", ["k2"])]
+
+
+def test_vector_insert_params_pairs_rows_with_serialized_vectors() -> None:
+    import struct
+
+    store = _bare_store(index_config={}, embedding_dims=2)
+    index_rows = [("a", "k1", "$"), ("a", "k2", "title")]
+    vectors = [[1.0, 2.0], [3.0, 4.0]]
+    params = store._vector_insert_params(index_rows, vectors)
+    assert len(params) == 2
+    assert params[0][:3] == ("a", "k1", "$")
+    assert params[1][:3] == ("a", "k2", "title")
+    # 4th element is the fvecs blob for the matching vector
+    blob = params[1][3]
+    count = struct.unpack_from("<I", blob, 0)[0]
+    assert count == 2
+    assert list(struct.unpack_from("<2f", blob, 4)) == pytest.approx([3.0, 4.0])
