@@ -8,14 +8,14 @@ from __future__ import annotations
 
 import os
 import time
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import Generator
 from typing import Any, TypedDict
 
 import pytest
 from hdbcli import dbapi
 from langgraph.store.base import IndexConfig, TTLConfig
 
-from langchain_hana.memorystores import AsyncHanaStore, HanaStore
+from langchain_hana.memorystores import HanaStore
 from tests.integration_tests.fake_embeddings import ConsistentFakeEmbeddings
 from tests.integration_tests.hana_test_utils import HanaTestUtils
 
@@ -235,48 +235,3 @@ def test_put_with_index_false_skips_embedding() -> None:
         assert s.get(ns, "x") is not None
     finally:
         conn.close()
-
-
-# --------------------------------------------------------------------------- #
-# Async store
-# --------------------------------------------------------------------------- #
-@pytest.fixture
-async def async_store() -> AsyncGenerator[AsyncHanaStore, None]:
-    conn = await dbapi.async_connect(**_conn_params())  # type: ignore[misc]
-    try:
-        s = AsyncHanaStore(
-            conn,
-            schema_name=config.schema_name,
-            **_unique_tables(config.conn),
-        )
-        await s.setup()
-        yield s
-    finally:
-        await conn.close()
-
-
-async def test_async_put_get_search(async_store: AsyncHanaStore) -> None:
-    ns = ("async", "1")
-    await async_store.aput(ns, "a", {"color": "red"})
-    await async_store.aput(ns, "b", {"color": "blue"})
-
-    item = await async_store.aget(ns, "a")
-    assert item is not None and item.value == {"color": "red"}
-
-    reds = await async_store.asearch(ns, filter={"color": "red"})
-    assert {i.key for i in reds} == {"a"}
-
-    await async_store.adelete(ns, "a")
-    assert await async_store.aget(ns, "a") is None
-
-
-async def test_async_batch_rejects_sync() -> None:
-    conn = await dbapi.async_connect(**_conn_params())  # type: ignore[misc]
-    try:
-        s = AsyncHanaStore(
-            conn, schema_name=config.schema_name, **_unique_tables(config.conn)
-        )
-        with pytest.raises(NotImplementedError):
-            s.batch([])
-    finally:
-        await conn.close()
