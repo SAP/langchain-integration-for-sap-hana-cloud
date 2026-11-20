@@ -152,6 +152,18 @@ async def test_search_filters_and_pagination(store: AsyncHanaStore) -> None:
     assert {i.key for i in nested} == {"a", "b"}
 
 
+async def test_search_empty_prefix_returns_all_namespaces(
+    store: AsyncHanaStore,
+) -> None:
+    # Empty prefix matches every namespace (regression: it used to match nothing).
+    await store.aput(("users", "1"), "a", {"v": 1})
+    await store.aput(("docs",), "b", {"v": 2})
+    await store.aput(("x", "y", "z"), "c", {"v": 3})
+
+    found = await store.asearch(())
+    assert {i.key for i in found} == {"a", "b", "c"}
+
+
 # --------------------------------------------------------------------------- #
 # Namespace listing
 # --------------------------------------------------------------------------- #

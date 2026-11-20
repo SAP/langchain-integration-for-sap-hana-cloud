@@ -266,8 +266,14 @@ class BaseHanaStore(BaseStore):
         metacharacters in the prefix escaped so they are treated literally. When
         ``alias`` is given the ``PREFIX`` column is qualified (e.g. ``s."PREFIX"``),
         needed where the surrounding query joins tables that both have a ``PREFIX``.
+
+        An empty prefix is a prefix of every namespace, so it matches all items:
+        the clause is a no-op (``1=1``) rather than ``"PREFIX" = '' OR ... LIKE '.%'``,
+        which would match nothing (no real item has an empty or dot-leading prefix).
         """
         col = f'{alias}."PREFIX"' if alias else '"PREFIX"'
+        if not prefix:
+            return "1=1", []
         prefix_text = self._namespace_to_text(prefix)
         like = self._escape_like(prefix_text) + ".%"
         return (f"({col} = ? OR {col} LIKE ? ESCAPE '\\')", [prefix_text, like])

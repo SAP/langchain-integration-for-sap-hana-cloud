@@ -147,6 +147,16 @@ def test_search_filters_and_pagination(store: HanaStore) -> None:
     assert {i.key for i in nested} == {"a", "b"}
 
 
+def test_search_empty_prefix_returns_all_namespaces(store: HanaStore) -> None:
+    # Empty prefix matches every namespace (regression: it used to match nothing).
+    store.put(("users", "1"), "a", {"v": 1})
+    store.put(("docs",), "b", {"v": 2})
+    store.put(("x", "y", "z"), "c", {"v": 3})
+
+    found = store.search(())
+    assert {i.key for i in found} == {"a", "b", "c"}
+
+
 # --------------------------------------------------------------------------- #
 # Namespace listing
 # --------------------------------------------------------------------------- #

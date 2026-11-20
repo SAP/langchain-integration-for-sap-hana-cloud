@@ -226,6 +226,28 @@ def test_search_sql_no_limit_when_python_paginated() -> None:
     assert "LIMIT" not in sql
 
 
+def test_search_namespace_clause_empty_prefix_matches_all() -> None:
+    # Empty prefix must match every namespace, not the no-match "" / ".%" form.
+    store = _bare_store()
+    clause, params = store._search_namespace_clause(())
+    assert clause == "1=1"
+    assert params == []
+    assert "PREFIX" not in clause
+
+
+def test_search_sql_empty_prefix_has_no_prefix_filter() -> None:
+    store = _bare_store()
+    sql, params = store._search_sql((), True, 5, 0)
+    assert params == []
+    assert '"PREFIX" LIKE' not in sql
+
+
+def test_vector_search_sql_empty_prefix_has_no_prefix_filter() -> None:
+    store = _bare_store(schema_name="S", index_config={}, embedding_dims=4)
+    _, params = store._vector_search_sql(())
+    assert params == []
+
+
 def test_list_namespaces_sql_with_ttl_has_where() -> None:
     store = _bare_store(ttl_config={})
     sql = store._list_namespaces_sql
