@@ -14,14 +14,14 @@ Three tables are used:
 * a **store** table holding one row per ``(namespace, key)`` item: its JSON value,
   create/update timestamps and (optional) TTL bookkeeping columns;
 * a **vectors** table (created only when semantic search is configured) holding one
-  ``REAL_VECTOR`` embedding per indexed text field of an item, keyed by
-  ``(prefix, key, field_name)``.
+  embedding per indexed text field of an item, keyed by ``(prefix, key, field_name)``.
+  The embedding column is ``REAL_VECTOR`` by default, or ``HALF_VECTOR`` when that
+  ``vector_column_type`` is selected.
 """
 
 from __future__ import annotations
 
 import json
-import struct
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from typing import Any
@@ -43,7 +43,14 @@ from langgraph.store.base import (
     get_text_at_path,
 )
 
-from langchain_hana.utils import _sanitize_name, _table_ref
+from langchain_hana.utils import (
+    DEFAULT_VECTOR_COLUMN_TYPE,
+    _sanitize_name,
+    _serialize_vector,
+    _table_ref,
+    _to_target_vector_type,
+    _validate_vector_column_type,
+)
 
 _DEFAULT_MIGRATIONS_TABLE = "LANGGRAPH_STORE_MIGRATIONS"
 _DEFAULT_STORE_TABLE = "LANGGRAPH_STORE"
@@ -78,6 +85,9 @@ class BaseHanaStore(BaseStore):
         migrations_table: Name of the migrations (version ledger) table.
         store_table: Name of the key-value store table.
         vectors_table: Name of the per-field embeddings table.
+        vector_column_type: Stored embedding column type, ``"REAL_VECTOR"`` (default,
+            4-byte) or ``"HALF_VECTOR"`` (2-byte half precision). ``HALF_VECTOR``
+            requires a HANA Cloud instance that offers the type (checked at ``setup``).
     """
 
     supports_ttl: bool = True
@@ -91,10 +101,12 @@ class BaseHanaStore(BaseStore):
         migrations_table: str = _DEFAULT_MIGRATIONS_TABLE,
         store_table: str = _DEFAULT_STORE_TABLE,
         vectors_table: str = _DEFAULT_VECTORS_TABLE,
+        vector_column_type: str = DEFAULT_VECTOR_COLUMN_TYPE,
     ) -> None:
         super().__init__()
         self.ttl_config = ttl
         self.index_config = index
+        self.vector_column_type = _validate_vector_column_type(vector_column_type)
         self.embeddings: Embeddings | None = None
         if index is not None:
             self.embeddings = ensure_embeddings(index["embed"])
@@ -151,7 +163,7 @@ class BaseHanaStore(BaseStore):
             f'"PREFIX" NVARCHAR({_PREFIX_LEN}) NOT NULL, '
             f'"KEY" NVARCHAR({_KEY_LEN}) NOT NULL, '
             f'"FIELD_NAME" NVARCHAR({_FIELD_LEN}) NOT NULL, '
-            f'"EMBEDDING" REAL_VECTOR({self.embedding_dims}), '
+            f'"EMBEDDING" {self.vector_column_type}({self.embedding_dims}), '
             '"CREATED_AT" TIMESTAMP DEFAULT CURRENT_UTCTIMESTAMP NOT NULL, '
             '"UPDATED_AT" TIMESTAMP DEFAULT CURRENT_UTCTIMESTAMP NOT NULL, '
             'PRIMARY KEY ("PREFIX", "KEY", "FIELD_NAME"))'
@@ -295,15 +307,17 @@ class BaseHanaStore(BaseStore):
     def _vector_search_sql(self, prefix: tuple[str, ...]) -> tuple[str, list[Any]]:
         """Vector search SQL: best cosine similarity per item, newest-first ties.
 
-        The query embedding is bound as the leading parameter via ``TO_REAL_VECTOR``.
+        The query embedding is bound as the leading parameter, wrapped in the
+        ``TO_<vector_column_type>`` conversion matching the stored column.
         ``VALUE`` is an NCLOB and cannot be grouped, so similarity is aggregated per
         ``(PREFIX, KEY)`` in a sub-select and then joined back to the store.
         """
         clause, params = self._search_namespace_clause(prefix, alias="s")
+        to_query_vec = _to_target_vector_type("?", self.vector_column_type)
         sql = (
             "WITH scored AS ("
             'SELECT "PREFIX", "KEY", '
-            'MAX(COSINE_SIMILARITY("EMBEDDING", TO_REAL_VECTOR(?))) AS "SCORE" '
+            f'MAX(COSINE_SIMILARITY("EMBEDDING", {to_query_vec})) AS "SCORE" '
             f'FROM {self._vectors_ref} GROUP BY "PREFIX", "KEY") '
             'SELECT s."PREFIX", s."KEY", s."VALUE", s."CREATED_AT", '
             's."UPDATED_AT", sc."SCORE" '
@@ -385,10 +399,14 @@ class BaseHanaStore(BaseStore):
             score=float(score) if score is not None else None,
         )
 
-    @staticmethod
-    def _serialize_vector(values: Sequence[float]) -> bytes:
-        """Serialize a float vector to HANA ``REAL_VECTOR`` (fvecs) binary format."""
-        return struct.pack(f"<I{len(values)}f", len(values), *values)
+    def _serialize_vector(self, values: Sequence[float]) -> bytes:
+        """Serialize a float vector to HANA's fvecs binary for the configured type.
+
+        Delegates to the module-level ``_serialize_vector`` helper in
+        ``langchain_hana.utils`` (same name, resolved as a module global), passing
+        the configured ``vector_column_type``.
+        """
+        return _serialize_vector(values, self.vector_column_type)
 
     @staticmethod
     def _vector_to_str(values: Sequence[float]) -> str:
