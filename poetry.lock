@@ -1648,6 +1648,21 @@ langchain-core = ">=0.2.38"
 ormsgpack = ">=1.12.0"
 
 [[package]]
+name = "langgraph-checkpoint-conformance"
+version = "0.0.2"
+description = "Conformance test suite for LangGraph checkpointer implementations."
+optional = false
+python-versions = ">=3.10"
+groups = ["test"]
+files = [
+    {file = "langgraph_checkpoint_conformance-0.0.2-py3-none-any.whl", hash = "sha256:c112ddc0416b097c90a145fd1908ba570db4cba209e1ae0330205e9f466ad4f9"},
+    {file = "langgraph_checkpoint_conformance-0.0.2.tar.gz", hash = "sha256:6718e00937bf2f04cdfd2cdfabea23e1dabb79a534ff4c127f305f6b40dad4e0"},
+]
+
+[package.dependencies]
+langgraph-checkpoint = ">=2.0.0"
+
+[[package]]
 name = "langgraph-prebuilt"
 version = "1.0.13"
 description = "Library with high-level APIs for creating and executing LangGraph agents and tools."
@@ -5296,4 +5311,4 @@ cffi = ["cffi (>=1.17,<2.0) ; platform_python_implementation != \"PyPy\" and pyt
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10,<4.0"
-content-hash = "be8fe3ed2faffe2cb088bc35865ec1a9f4d24b0b5a483c584d5a8c75b857d0b7"
+content-hash = "41c1384e112536a12934779e79cb74f0711ec2dd0d5932dfdf7991d36ca82390"
