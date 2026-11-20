@@ -39,6 +39,7 @@ from langgraph.checkpoint.base import (
     get_checkpoint_id,
     get_checkpoint_metadata,
 )
+from langgraph.checkpoint.serde.types import TASKS
 
 from langchain_hana.utils import (
     _json_value,
@@ -234,6 +235,22 @@ class BaseHanaCheckpointSaver(BaseCheckpointSaver[str]):
             'SELECT "TASK_ID", "CHANNEL", "TYPE", "VALUE", "TASK_PATH", "IDX" FROM '
             f"{self._writes_ref} "
             'WHERE "THREAD_ID" = ? AND "CHECKPOINT_NS" = ? AND "CHECKPOINT_ID" = ?'
+        )
+
+    def _pending_sends_sql(self) -> str:
+        """SQL to fetch a parent checkpoint's ``TASKS`` (pending-send) writes.
+
+        Pre-v4 checkpoints stored ``Send`` objects as pending writes on the parent
+        under the ``__pregel_tasks`` channel instead of inline in
+        ``channel_values``. Rows are returned in ``_writes_sort_key`` order so the
+        reconstructed send list matches the original scheduling order.
+        """
+        return (
+            'SELECT "TYPE", "VALUE" FROM '
+            f"{self._writes_ref} "
+            'WHERE "THREAD_ID" = ? AND "CHECKPOINT_NS" = ? '
+            'AND "CHECKPOINT_ID" = ? AND "CHANNEL" = ? '
+            'ORDER BY "TASK_PATH", "TASK_ID", "IDX"'
         )
 
     def _upsert_blobs_sql(self) -> str:
@@ -479,6 +496,38 @@ class BaseHanaCheckpointSaver(BaseCheckpointSaver[str]):
             **checkpoint_value.get("channel_values", {}),
             **self._load_blobs(blob_rows, self.serde),
         }
+
+    def _migrate_pending_sends(
+        self, checkpoint_value: Checkpoint, send_rows: Iterable[Any]
+    ) -> None:
+        """Surface a pre-v4 checkpoint's parent ``TASKS`` writes as an inline channel.
+
+        Mirrors the langgraph Postgres saver's ``_migrate_pending_sends``: deserialize
+        the parent's ``__pregel_tasks`` writes (``(type, value)`` rows already in
+        ``_writes_sort_key`` order) into a list of ``Send`` objects and inject them as
+        ``channel_values[TASKS]`` with a matching ``channel_versions[TASKS]`` entry, so
+        a v4-era reader sees the same inline shape it would for a current checkpoint.
+        """
+        sends = [
+            self.serde.loads_typed(
+                cast("tuple[str, bytes]", (serde_type, self._to_bytes(value)))
+            )
+            for serde_type, value in send_rows
+        ]
+        if not sends:
+            return
+        channel_versions = checkpoint_value.get("channel_versions") or {}
+        # Compute the next version from the existing map *before* inserting TASKS.
+        version = (
+            max(channel_versions.values())
+            if channel_versions
+            else self.get_next_version(None, None)
+        )
+        channel_versions[TASKS] = version
+        checkpoint_value["channel_versions"] = channel_versions
+        channel_values = checkpoint_value.get("channel_values") or {}
+        channel_values[TASKS] = sends
+        checkpoint_value["channel_values"] = channel_values
 
     def _prepare_put(
         self,

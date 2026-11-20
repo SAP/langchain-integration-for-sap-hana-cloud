@@ -30,6 +30,7 @@ from langgraph.checkpoint.base import (
     CheckpointTuple,
     SerializerProtocol,
 )
+from langgraph.checkpoint.serde.types import TASKS
 
 from langchain_hana.checkpointers.base_hana_checkpoint_saver import (
     _DEFAULT_BLOBS_TABLE,
@@ -182,7 +183,12 @@ class AsyncHanaCheckpointSaver(BaseHanaCheckpointSaver):
                 metadata,
             ) = raw
             checkpoint_value = await self._aload_checkpoint(
-                cur, thread_id, checkpoint_ns, serde_type, checkpoint
+                cur,
+                thread_id,
+                checkpoint_ns,
+                serde_type,
+                checkpoint,
+                parent_checkpoint_id,
             )
             await cur.execute(
                 self._pending_writes_sql(),
@@ -227,7 +233,12 @@ class AsyncHanaCheckpointSaver(BaseHanaCheckpointSaver):
                 metadata,
             ) in checkpoint_rows:
                 checkpoint_value = await self._aload_checkpoint(
-                    cur, thread_id, checkpoint_ns, serde_type, checkpoint
+                    cur,
+                    thread_id,
+                    checkpoint_ns,
+                    serde_type,
+                    checkpoint,
+                    parent_checkpoint_id,
                 )
                 await cur.execute(
                     self._pending_writes_sql(),
@@ -255,6 +266,7 @@ class AsyncHanaCheckpointSaver(BaseHanaCheckpointSaver):
         checkpoint_ns: str,
         serde_type: Any,
         checkpoint: Any,
+        parent_checkpoint_id: Any = None,
     ) -> Checkpoint:
         """Deserialize a checkpoint skeleton and merge its per-channel blob values."""
         checkpoint_value, channel_versions = self._decode_checkpoint(
@@ -266,6 +278,15 @@ class AsyncHanaCheckpointSaver(BaseHanaCheckpointSaver):
             )
             blob_rows = await cur.fetchall()
             self._merge_channel_values(checkpoint_value, blob_rows)
+        # Pre-v4 checkpoints keep their pending sends as TASKS writes on the parent;
+        # surface them as an inline channel so callers see the current (v4) shape.
+        if checkpoint_value.get("v", 0) < 4 and parent_checkpoint_id:
+            await cur.execute(
+                self._pending_sends_sql(),
+                (thread_id, checkpoint_ns, str(parent_checkpoint_id), TASKS),
+            )
+            send_rows = await cur.fetchall()
+            self._migrate_pending_sends(checkpoint_value, send_rows)
         return checkpoint_value
 
     # ------------------------------------------------------------------ #
