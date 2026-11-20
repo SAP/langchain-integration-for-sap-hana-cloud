@@ -6,10 +6,12 @@ following the design of langgraph's **Postgres** store. The schema, SQL builders
 pure helpers are shared with the native-async ``AsyncHanaStore`` via
 :class:`BaseHanaStore`.
 
-Vector search uses *external* embeddings (a LangChain ``Embeddings`` instance, a
-sync/async embedding function, or a ``"provider:model"`` string) and HANA
-``REAL_VECTOR`` columns with ``COSINE_SIMILARITY``. HANA *internal* embeddings
-(``VECTOR_EMBEDDING``) are not wired up in this version.
+Vector search uses either *external* embeddings (a LangChain ``Embeddings`` instance, a
+sync/async embedding function, or a ``"provider:model"`` string) or HANA *internal*
+embeddings. Passing a ``HanaInternalEmbeddings`` as ``index["embed"]`` makes HANA
+compute vectors in-database via ``VECTOR_EMBEDDING`` at put/search time (no Python-side
+embedding call); ``index["dims"]`` must match the model's output dimensionality. Both
+back ``REAL_VECTOR``/``HALF_VECTOR`` columns scored with ``COSINE_SIMILARITY``.
 """
 
 from __future__ import annotations
@@ -127,6 +129,12 @@ class HanaStore(BaseHanaStore):
             ):
                 _validate_datatype_support(self.connection, self.vector_column_type)
                 cur.execute(self._vectors_ddl())
+            if self.use_internal_embeddings:
+                # Confirm the in-database embedding model resolves on this instance.
+                embed_sql, embed_params = self._vector_embedding_sql_and_params(
+                    "test", "QUERY"
+                )
+                cur.execute(self._validate_embedding_sql(embed_sql), embed_params)
             self.connection.commit()
         finally:
             cur.close()
@@ -213,10 +221,14 @@ class HanaStore(BaseHanaStore):
                 for field, text in self._extract_index_texts(op):
                     index_rows.append((prefix, key, field))
                     index_texts.append(text)
-        if index_texts and self.embeddings is not None:
-            vectors = self.embeddings.embed_documents(index_texts)
-            params = self._vector_insert_params(index_rows, vectors)
-            cur.executemany(self._insert_vector_sql, params)
+        if index_texts:
+            if self.use_internal_embeddings:
+                params = self._vector_insert_internal_params(index_rows, index_texts)
+                cur.executemany(self._insert_vector_internal_sql, params)
+            elif self.embeddings is not None:
+                vectors = self.embeddings.embed_documents(index_texts)
+                params = self._vector_insert_params(index_rows, vectors)
+                cur.executemany(self._insert_vector_sql, params)
 
     def _batch_search(
         self,
@@ -227,10 +239,18 @@ class HanaStore(BaseHanaStore):
         for idx, op in search_ops:
             use_vector = bool(op.query) and self.index_config is not None
             if use_vector:
-                assert self.embeddings is not None
-                query_vec = self.embeddings.embed_query(op.query)  # type: ignore[arg-type]
                 sql, params = self._vector_search_sql(op.namespace_prefix)
-                cur.execute(sql, (self._vector_to_str(query_vec), *params))
+                if self.use_internal_embeddings:
+                    # HANA embeds op.query in-database; pass VECTOR_EMBEDDING params.
+                    _, embed_params = self._vector_embedding_sql_and_params(
+                        op.query,  # type: ignore[arg-type]
+                        "QUERY",
+                    )
+                else:
+                    assert self.embeddings is not None
+                    query_vec = self.embeddings.embed_query(op.query)  # type: ignore[arg-type]
+                    embed_params = (self._vector_to_str(query_vec),)
+                cur.execute(sql, (*embed_params, *params))
                 rows = cur.fetchall() if cur.has_result_set() else []
                 candidates = [self._row_to_search_item(row) for row in rows]
             else:
