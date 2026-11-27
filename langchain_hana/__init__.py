@@ -8,6 +8,7 @@ from langchain_hana.checkpointers import (
 )
 from langchain_hana.embeddings import HanaInternalEmbeddings
 from langchain_hana.graphs import HanaRdfGraph
+from langchain_hana.memorystores import AsyncHanaStore, HanaStore
 from langchain_hana.structured_query import HanaTranslator
 from langchain_hana.vectorstores import HanaDB, HanaReranker
 
@@ -28,5 +29,7 @@ __all__ = [
     "HanaReranker",
     "HanaCheckpointSaver",
     "AsyncHanaCheckpointSaver",
+    "HanaStore",
+    "AsyncHanaStore",
     "__version__",
 ]
