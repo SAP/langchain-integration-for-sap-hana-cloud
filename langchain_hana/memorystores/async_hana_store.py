@@ -41,6 +41,7 @@ from langchain_hana.memorystores.base_hana_store import (
     _DEFAULT_VECTORS_TABLE,
     BaseHanaStore,
 )
+from langchain_hana.utils import DEFAULT_VECTOR_COLUMN_TYPE, _datatype_support_error
 
 
 class AsyncHanaStore(BaseHanaStore):
@@ -55,6 +56,8 @@ class AsyncHanaStore(BaseHanaStore):
         migrations_table: Name of the migrations (version ledger) table.
         store_table: Name of the key-value store table.
         vectors_table: Name of the per-field embeddings table.
+        vector_column_type: Stored embedding column type, ``"REAL_VECTOR"`` (default)
+            or ``"HALF_VECTOR"`` (requires a HANA instance that offers the type).
 
     Example:
         >>> from hdbcli import dbapi
@@ -75,6 +78,7 @@ class AsyncHanaStore(BaseHanaStore):
         migrations_table: str = _DEFAULT_MIGRATIONS_TABLE,
         store_table: str = _DEFAULT_STORE_TABLE,
         vectors_table: str = _DEFAULT_VECTORS_TABLE,
+        vector_column_type: str = DEFAULT_VECTOR_COLUMN_TYPE,
     ) -> None:
         super().__init__(
             index=index,
@@ -83,6 +87,7 @@ class AsyncHanaStore(BaseHanaStore):
             migrations_table=migrations_table,
             store_table=store_table,
             vectors_table=vectors_table,
+            vector_column_type=vector_column_type,
         )
         self.connection = connection
         # setautocommit is synchronous at runtime, like cursor() below.
@@ -114,10 +119,33 @@ class AsyncHanaStore(BaseHanaStore):
                 await cur.execute(migrations[v])
                 await cur.execute(self._insert_version_sql, (v,))
             if self.index_config is not None and not await self._table_exists(cur):
+                await self._avalidate_datatype_support(cur)
                 await cur.execute(self._vectors_ddl())
             await self.connection.commit()
         finally:
             await cur.close()
+
+    async def _avalidate_datatype_support(self, cur: dbapi.AsyncCursor) -> None:
+        """Raise if the configured ``vector_column_type`` is unavailable here.
+
+        The sync store uses the blocking ``utils._validate_datatype_support``; this
+        is the awaited equivalent, running the ``SYS.DATA_TYPES`` / ``SYS.M_DATABASE``
+        queries itself and reusing the shared error-message builder.
+        """
+        await cur.execute("SELECT TYPE_NAME FROM SYS.DATA_TYPES")
+        rows = await cur.fetchall()
+        if self.vector_column_type in {row[0] for row in rows}:
+            return
+        instance_version: str | None = None
+        try:
+            await cur.execute("SELECT CLOUD_VERSION FROM SYS.M_DATABASE")
+            row = await cur.fetchone()
+            instance_version = row[0] if row else None
+        except dbapi.Error:
+            instance_version = None
+        raise ValueError(
+            _datatype_support_error(self.vector_column_type, instance_version)
+        )
 
     async def _table_exists(self, cur: dbapi.AsyncCursor) -> bool:
         """Whether the vectors table already exists in the target schema."""

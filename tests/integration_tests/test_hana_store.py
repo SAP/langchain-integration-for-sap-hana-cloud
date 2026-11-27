@@ -13,13 +13,11 @@ from typing import Any, TypedDict
 
 import pytest
 from hdbcli import dbapi
-from langgraph.store.base import IndexConfig, TTLConfig
+from langgraph.store.base import TTLConfig
 
 from langchain_hana.memorystores import HanaStore
-from tests.integration_tests.fake_embeddings import ConsistentFakeEmbeddings
 from tests.integration_tests.hana_test_utils import HanaTestUtils
-
-_DIMS = 10
+from tests.integration_tests.store_embedding_configs import STORE_CONFIG_IDS, resolve
 
 
 class _Tables(TypedDict):
@@ -42,14 +40,6 @@ def _conn_params() -> dict[str, Any]:
         "port": int(os.environ["HANA_DB_PORT"]),
         "user": os.environ["HANA_DB_USER"],
         "password": os.environ["HANA_DB_PASSWORD"],
-    }
-
-
-def _index_config() -> IndexConfig:
-    return {
-        "dims": _DIMS,
-        "embed": ConsistentFakeEmbeddings(dimensionality=_DIMS),
-        "fields": ["text"],
     }
 
 
@@ -89,6 +79,25 @@ def _unique_tables(conn: dbapi.Connection) -> _Tables:
         "store_table": f"S_{suffix}",
         "vectors_table": f"V_{suffix}",
     }
+
+
+@pytest.fixture(params=STORE_CONFIG_IDS)
+def indexed_store(
+    request: pytest.FixtureRequest,
+) -> Generator[HanaStore, None, None]:
+    """An indexed store, parametrized over each embedding/column-type config."""
+    index_config, vector_column_type = resolve(request.param, config.conn)
+    conn = dbapi.connect(**_conn_params())
+    try:
+        yield HanaStore(
+            conn,
+            schema_name=config.schema_name,
+            index=index_config,
+            vector_column_type=vector_column_type,
+            **_unique_tables(conn),
+        )
+    finally:
+        conn.close()
 
 
 # --------------------------------------------------------------------------- #
@@ -205,43 +214,28 @@ def test_ttl_expiry_refresh_and_sweep() -> None:
 
 # --------------------------------------------------------------------------- #
 # Vector / semantic search
+#
+# These run over every embedding/column-type config in STORE_CONFIG_IDS via the
+# parametrized ``indexed_store`` fixture.
 # --------------------------------------------------------------------------- #
-def test_vector_search_ranks_by_similarity() -> None:
-    conn = dbapi.connect(**_conn_params())
-    try:
-        s = HanaStore(
-            conn,
-            schema_name=config.schema_name,
-            index=_index_config(),
-            **_unique_tables(conn),
-        )
-        ns = ("memories",)
-        s.put(ns, "cats", {"text": "cats"})
-        s.put(ns, "dogs", {"text": "dogs"})
-        s.put(ns, "birds", {"text": "birds"})
+def test_vector_search_ranks_by_similarity(indexed_store: HanaStore) -> None:
+    s = indexed_store
+    ns = ("memories",)
+    s.put(ns, "cats", {"text": "cats"})
+    s.put(ns, "dogs", {"text": "dogs"})
+    s.put(ns, "birds", {"text": "birds"})
 
-        results = s.search(ns, query="cats")
-        assert results
-        assert results[0].key == "cats"
-        assert results[0].score is not None
-    finally:
-        conn.close()
+    results = s.search(ns, query="cats")
+    assert results
+    assert results[0].key == "cats"
+    assert results[0].score is not None
 
 
-def test_put_with_index_false_skips_embedding() -> None:
-    conn = dbapi.connect(**_conn_params())
-    try:
-        s = HanaStore(
-            conn,
-            schema_name=config.schema_name,
-            index=_index_config(),
-            **_unique_tables(conn),
-        )
-        ns = ("memories",)
-        s.put(ns, "x", {"text": "hello"}, index=False)
-        # No embedding stored -> not returned by a vector query.
-        assert s.search(ns, query="hello") == []
-        # But still retrievable by key and by metadata search.
-        assert s.get(ns, "x") is not None
-    finally:
-        conn.close()
+def test_put_with_index_false_skips_embedding(indexed_store: HanaStore) -> None:
+    s = indexed_store
+    ns = ("memories",)
+    s.put(ns, "x", {"text": "hello"}, index=False)
+    # No embedding stored -> not returned by a vector query.
+    assert s.search(ns, query="hello") == []
+    # But still retrievable by key and by metadata search.
+    assert s.get(ns, "x") is not None
