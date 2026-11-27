@@ -10,6 +10,11 @@ with the sync store via :class:`BaseHanaStore`.
 (``KEY``/``PREFIX``) columns directly as ``str`` on both sync and async connections,
 so rows are consumed as-is with no per-column decoding.
 
+Like the sync store, it supports both *external* embeddings and HANA *internal*
+embeddings (pass a ``HanaInternalEmbeddings`` as ``index["embed"]`` to compute vectors
+in-database via ``VECTOR_EMBEDDING``); ``index["dims"]`` must match the model's output
+dimensionality.
+
 Unlike the sync store, ``setup()`` is a coroutine and is **not** called from
 ``__init__`` — the caller must ``await store.setup()`` once before use. The
 synchronous ``BaseStore`` methods (``get``/``put``/``search``/``list_namespaces``)
@@ -121,6 +126,12 @@ class AsyncHanaStore(BaseHanaStore):
             if self.index_config is not None and not await self._table_exists(cur):
                 await self._avalidate_datatype_support(cur)
                 await cur.execute(self._vectors_ddl())
+            if self.use_internal_embeddings:
+                # Confirm the in-database embedding model resolves on this instance.
+                embed_sql, embed_params = self._vector_embedding_sql_and_params(
+                    "test", "QUERY"
+                )
+                await cur.execute(self._validate_embedding_sql(embed_sql), embed_params)
             await self.connection.commit()
         finally:
             await cur.close()
@@ -257,10 +268,14 @@ class AsyncHanaStore(BaseHanaStore):
                 for field, text in self._extract_index_texts(op):
                     index_rows.append((prefix, key, field))
                     index_texts.append(text)
-        if index_texts and self.embeddings is not None:
-            vectors = await self.embeddings.aembed_documents(index_texts)
-            params = self._vector_insert_params(index_rows, vectors)
-            await cur.executemany(self._insert_vector_sql, params)
+        if index_texts:
+            if self.use_internal_embeddings:
+                params = self._vector_insert_internal_params(index_rows, index_texts)
+                await cur.executemany(self._insert_vector_internal_sql, params)
+            elif self.embeddings is not None:
+                vectors = await self.embeddings.aembed_documents(index_texts)
+                params = self._vector_insert_params(index_rows, vectors)
+                await cur.executemany(self._insert_vector_sql, params)
 
     async def _abatch_search(
         self,
@@ -271,10 +286,18 @@ class AsyncHanaStore(BaseHanaStore):
         for idx, op in search_ops:
             use_vector = bool(op.query) and self.index_config is not None
             if use_vector:
-                assert self.embeddings is not None
-                query_vec = await self.embeddings.aembed_query(op.query)  # type: ignore[arg-type]
                 sql, params = self._vector_search_sql(op.namespace_prefix)
-                await cur.execute(sql, (self._vector_to_str(query_vec), *params))
+                if self.use_internal_embeddings:
+                    # HANA embeds op.query in-database; pass VECTOR_EMBEDDING params.
+                    _, embed_params = self._vector_embedding_sql_and_params(
+                        op.query,  # type: ignore[arg-type]
+                        "QUERY",
+                    )
+                else:
+                    assert self.embeddings is not None
+                    query_vec = await self.embeddings.aembed_query(op.query)  # type: ignore[arg-type]
+                    embed_params = (self._vector_to_str(query_vec),)
+                await cur.execute(sql, (*embed_params, *params))
                 rows = await cur.fetchall()
                 candidates = [self._row_to_search_item(row) for row in rows]
             else:

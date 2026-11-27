@@ -17,6 +17,12 @@ Three tables are used:
   embedding per indexed text field of an item, keyed by ``(prefix, key, field_name)``.
   The embedding column is ``REAL_VECTOR`` by default, or ``HALF_VECTOR`` when that
   ``vector_column_type`` is selected.
+
+Embeddings come from either an *external* embedder (a LangChain ``Embeddings``
+instance/function called in Python) or HANA *internal* embeddings — passing a
+``HanaInternalEmbeddings`` as ``index["embed"]`` makes the store compute vectors
+in-database via ``VECTOR_EMBEDDING(...)`` at put/search time. ``index["dims"]`` must
+match the internal model's output dimensionality.
 """
 
 from __future__ import annotations
@@ -43,13 +49,17 @@ from langgraph.store.base import (
     get_text_at_path,
 )
 
+from langchain_hana.embeddings import HanaInternalEmbeddings
 from langchain_hana.utils import (
     DEFAULT_VECTOR_COLUMN_TYPE,
+    _convert_vector_embedding_to_column_type,
     _sanitize_name,
     _serialize_vector,
     _table_ref,
     _to_target_vector_type,
+    _validate_identifier,
     _validate_vector_column_type,
+    _vector_embedding_sql_and_params,
 )
 
 _DEFAULT_MIGRATIONS_TABLE = "LANGGRAPH_STORE_MIGRATIONS"
@@ -108,10 +118,30 @@ class BaseHanaStore(BaseStore):
         self.index_config = index
         self.vector_column_type = _validate_vector_column_type(vector_column_type)
         self.embeddings: Embeddings | None = None
+        # Internal-embedding config, populated below when ``index["embed"]`` is a
+        # ``HanaInternalEmbeddings`` so vectors are computed in-database via
+        # ``VECTOR_EMBEDDING`` instead of a Python-side embedding call.
+        self.use_internal_embeddings = False
+        self.internal_embedding_model_id = ""
+        self.internal_embedding_remote_source_schema = ""
+        self.internal_embedding_remote_source = ""
         if index is not None:
             self.embeddings = ensure_embeddings(index["embed"])
             self.embedding_dims = int(index["dims"])
             self.index_fields = list(index.get("fields") or ["$"])
+            if isinstance(self.embeddings, HanaInternalEmbeddings):
+                self.use_internal_embeddings = True
+                self.internal_embedding_model_id = self.embeddings.get_model_id()
+                self.internal_embedding_remote_source_schema = (
+                    self.embeddings.get_remote_source_schema()
+                )
+                self.internal_embedding_remote_source = (
+                    self.embeddings.get_remote_source()
+                )
+                if self.internal_embedding_remote_source_schema:
+                    _validate_identifier(self.internal_embedding_remote_source_schema)
+                if self.internal_embedding_remote_source:
+                    _validate_identifier(self.internal_embedding_remote_source)
         else:
             self.embedding_dims = 0
             self.index_fields = []
@@ -264,6 +294,47 @@ class BaseHanaStore(BaseStore):
             '("PREFIX", "KEY", "FIELD_NAME", "EMBEDDING") VALUES (?, ?, ?, ?)'
         )
 
+    def _vector_embedding_sql_and_params(
+        self, text: str, kind: str
+    ) -> tuple[str, tuple[str, ...]]:
+        """Build the in-database ``VECTOR_EMBEDDING`` expression and its params.
+
+        Thin wrapper over the module-level ``_vector_embedding_sql_and_params`` helper
+        in ``langchain_hana.utils`` (same name, resolved as a module global), binding
+        the store's internal-embedding model/remote-source config. ``kind`` is
+        ``"QUERY"`` or ``"DOCUMENT"``.
+        """
+        return _vector_embedding_sql_and_params(
+            text,
+            kind,
+            self.internal_embedding_model_id,
+            self.internal_embedding_remote_source_schema,
+            self.internal_embedding_remote_source,
+        )
+
+    @property
+    def _insert_vector_internal_sql(self) -> str:
+        """INSERT for internal embeddings: HANA computes the vector via SQL.
+
+        The ``EMBEDDING`` value is a ``VECTOR_EMBEDDING(...)`` expression (wrapped in
+        ``TO_<type>`` when the column is not ``REAL_VECTOR``), so the bound params are
+        the text + model id (+ optional remote source) rather than a serialized vector.
+        """
+        embed_expr, _ = self._vector_embedding_sql_and_params("", "DOCUMENT")
+        embed_expr = _convert_vector_embedding_to_column_type(
+            embed_expr, self.vector_column_type
+        )
+        return (
+            f"INSERT INTO {self._vectors_ref} "
+            '("PREFIX", "KEY", "FIELD_NAME", "EMBEDDING") '
+            f"VALUES (?, ?, ?, {embed_expr})"
+        )
+
+    @staticmethod
+    def _validate_embedding_sql(embed_expr: str) -> str:
+        """Probe query confirming an ``embed_expr`` runs on the HANA instance."""
+        return f'SELECT COUNT(TO_NVARCHAR({embed_expr})) AS "CNT" FROM sys.DUMMY'
+
     def _merge_store_params(self, prefix: str, key: str, op: PutOp) -> tuple[Any, ...]:
         value_json = json.dumps(op.value, ensure_ascii=False)
         ttl = op.ttl
@@ -307,13 +378,25 @@ class BaseHanaStore(BaseStore):
     def _vector_search_sql(self, prefix: tuple[str, ...]) -> tuple[str, list[Any]]:
         """Vector search SQL: best cosine similarity per item, newest-first ties.
 
-        The query embedding is bound as the leading parameter, wrapped in the
-        ``TO_<vector_column_type>`` conversion matching the stored column.
+        The returned ``params`` are only the namespace-prefix params; the handler
+        supplies the leading query-embedding params. For *external* embeddings the
+        query vector is bound as one leading param, wrapped in the
+        ``TO_<vector_column_type>`` conversion matching the stored column. For
+        *internal* embeddings the query embedding is computed in-database with
+        ``VECTOR_EMBEDDING(?, 'QUERY', ?[, ?, ?])`` (wrapped in ``TO_<type>`` when the
+        column is not ``REAL_VECTOR``), and its params lead instead.
+
         ``VALUE`` is an NCLOB and cannot be grouped, so similarity is aggregated per
         ``(PREFIX, KEY)`` in a sub-select and then joined back to the store.
         """
         clause, params = self._search_namespace_clause(prefix, alias="s")
-        to_query_vec = _to_target_vector_type("?", self.vector_column_type)
+        if self.use_internal_embeddings:
+            embed_expr, _ = self._vector_embedding_sql_and_params("", "QUERY")
+            to_query_vec = _convert_vector_embedding_to_column_type(
+                embed_expr, self.vector_column_type
+            )
+        else:
+            to_query_vec = _to_target_vector_type("?", self.vector_column_type)
         sql = (
             "WITH scored AS ("
             'SELECT "PREFIX", "KEY", '
@@ -510,6 +593,23 @@ class BaseHanaStore(BaseStore):
         """Build ``(prefix, key, field, serialized_vector)`` tuples for insertion."""
         return [
             (*row, self._serialize_vector(vec)) for row, vec in zip(index_rows, vectors)
+        ]
+
+    def _vector_insert_internal_params(
+        self,
+        index_rows: list[tuple[str, str, str]],
+        index_texts: Sequence[str],
+    ) -> list[tuple[Any, ...]]:
+        """Build param tuples for the internal-embedding INSERT.
+
+        Each row is ``(prefix, key, field, text, model_id[, remote_schema,
+        remote_source])`` — the ``VECTOR_EMBEDDING`` params trail the key columns so
+        HANA computes the embedding from ``text`` at insert time (no Python-side
+        embedding call).
+        """
+        return [
+            (*row, *self._vector_embedding_sql_and_params(text, "DOCUMENT")[1])
+            for row, text in zip(index_rows, index_texts)
         ]
 
     # -- metadata filtering (python-side, mirrors InMemoryStore) -------- #
