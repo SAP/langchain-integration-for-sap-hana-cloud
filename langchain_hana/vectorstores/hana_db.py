@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import struct
 import uuid
 from typing import (
@@ -26,6 +25,9 @@ from langchain_core.vectorstores.utils import maximal_marginal_relevance
 from langchain_hana.embeddings import HanaInternalEmbeddings
 from langchain_hana.utils import (
     DistanceStrategy,
+    _json_value,
+    _sanitize_name,
+    _table_exists,
     _table_ref,
     _validate_k,
     _validate_k_and_fetch_k,
@@ -151,7 +153,7 @@ class HanaDB(VectorStore):
 
     def _initialize_table(self) -> None:
         """Create the table if it doesn't exist and validate columns."""
-        if not self._table_exists(self.table_name):
+        if not _table_exists(self.connection, self.table_name, self.schema_name):
             sql_str = (
                 f"CREATE TABLE {self._table_ref}("
                 f'"{self.content_column}" NCLOB, '
@@ -180,26 +182,6 @@ class HanaDB(VectorStore):
         )
         for column_name in self.specific_metadata_columns:
             self._check_column(self.table_name, column_name)
-
-    def _table_exists(self, table_name: str) -> bool:
-        if self.schema_name:
-            schema_str = f"'{self.schema_name}'"
-        else:
-            schema_str = "CURRENT_SCHEMA"
-        sql_str = (
-            f"SELECT COUNT(*) FROM SYS.TABLES WHERE SCHEMA_NAME = {schema_str}"
-            " AND TABLE_NAME = ?"
-        )
-        try:
-            cur = self.connection.cursor()
-            cur.execute(sql_str, (table_name,))
-            if cur.has_result_set():
-                rows = cur.fetchall()
-                if rows[0][0] == 1:
-                    return True
-        finally:
-            cur.close()
-        return False
 
     def _check_column(
         self,
@@ -302,7 +284,7 @@ class HanaDB(VectorStore):
     @staticmethod
     def _sanitize_name(input_str: str) -> str:
         # Remove characters that are not alphanumeric or underscores
-        return re.sub(r"[^a-zA-Z0-9_]", "", input_str)
+        return _sanitize_name(input_str)
 
     @staticmethod
     def _sanitize_int(input_int: Any) -> int:
@@ -1347,7 +1329,7 @@ class HanaDB(VectorStore):
 
         metadata_columns = [
             (
-                f"JSON_VALUE({self.metadata_column}, '$.{HanaDB._sanitize_name(col)}') "
+                f"{_json_value(self.metadata_column, HanaDB._sanitize_name(col))} "
                 f'AS "{HanaDB._sanitize_name(col)}"'
             )
             for col in projected_metadata_columns

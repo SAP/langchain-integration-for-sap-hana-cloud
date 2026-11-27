@@ -1,22 +1,12 @@
 """Shared utilities for vectorstore modules."""
 
 import logging
-import re
 
 from hdbcli import dbapi
 
+from langchain_hana.utils import _validate_identifier
+
 logger = logging.getLogger(__name__)
-
-_VALID_IDENTIFIER_RE = re.compile(r"[_a-zA-Z][_a-zA-Z0-9]*")
-
-
-def _validate_identifier(name: str) -> None:
-    """Raise ValueError if name is not a safe SQL/JSON identifier."""
-    if not _VALID_IDENTIFIER_RE.fullmatch(name):
-        raise ValueError(
-            f"Invalid identifier {name!r}: only letters, digits, and underscores "
-            "are allowed, and it must not start with a digit."
-        )
 
 
 def _sanitize_metadata_keys(metadata_keys: list[str]) -> None:
